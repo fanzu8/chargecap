@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=chargecap
+Name[zh_CN]=电电
+Comment=Set battery charge limits; optionally inhibit sleep while plugged in
+Comment[zh_CN]=设置电池充电上下限，并可插电时禁止休眠
+Exec=/usr/local/bin/chargecap
+Icon=org.postmarketos.Chargecap
+Terminal=false
+Categories=System;Settings;
+Keywords=battery;charge;limit;充电;电池;
+StartupNotify=false

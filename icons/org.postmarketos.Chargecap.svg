@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><g transform="translate(512 512) scale(1.3166) translate(-512 -518)">
+  <defs>
+    <linearGradient id="bt12" x1="482" y1="330" x2="482" y2="694" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5BE49B"/>
+      <stop offset="0.55" stop-color="#22C55E"/>
+      <stop offset="1" stop-color="#128A43"/>
+    </linearGradient>
+    <clipPath id="cp12">
+      <rect x="162" y="330" width="640" height="364" rx="88"/>
+    </clipPath>
+  </defs>
+  <g fill="url(#bt12)">
+    <rect x="814" y="437" width="48" height="150" rx="22"/>
+    <rect x="162" y="330" width="640" height="364" rx="88"/>
+  </g>
+
+  <!-- 斜向趋势线（三折：峰—谷—峰）+ 淡面积，作为背景图表层 -->
+  <g clip-path="url(#cp12)">
+    <path d="M250 686 L490 520 L600 662 L712 514 L786 432 L812 432 L812 706 L150 706 Z"
+          fill="#FFFFFF" fill-opacity="0.15"/>
+  </g>
+  <polyline points="250,686 490,520 600,662 712,514 786,432"
+            fill="none" stroke="#FFFFFF" stroke-opacity="1"
+            stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- 播放 + 暂停 -->
+  <g fill="#FFFFFF">
+    <path d="M291 420 L385 512 L291 604 Z" stroke="#FFFFFF" stroke-width="36" stroke-linejoin="round"/>
+    <rect x="463" y="402" width="84" height="220" rx="32"/>
+    <rect x="607" y="402" width="84" height="220" rx="32"/>
+  </g>
+</g></svg>

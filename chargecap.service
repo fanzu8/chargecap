@@ -1,0 +1,13 @@
+[Unit]
+Description=chargecap - keep the battery in a charge window (OnePlus 6 / 6T, postmarketOS)
+After=multi-user.target
+Wants=systemd-logind.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/chargecap/daemon.py --config /var/lib/chargecap/config.json --request /home/user/.config/chargecap/request.json --state /run/chargecap/state.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

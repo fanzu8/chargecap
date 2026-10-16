@@ -1,0 +1,1523 @@
+#!/usr/bin/env python3
+
+# ---------------------------------------------------------------------------
+# chargecap - keep an always-plugged-in phone inside a charge window
+#
+# Licence: General Pleasure League (GPL) 1.0
+#          https://github.com/fanzu8/General-Pleasure-League
+#
+#          You are the general of your own life, the master of your own fate:
+#          no restrictions, no compulsions - use it, change it, share it, and
+#          let pleasure be your primary guide.  Just be happy.
+# ---------------------------------------------------------------------------
+
+# Charge-limit control app (Phosh / GTK4 + libadwaita).
+# Talks to the root daemon through two files, so it needs no privileges:
+#   read  /run/chargecap/state.json   (settings, plugged/inhibit flags)
+#   write ~/.config/chargecap/request.json
+# Battery metrics are read directly from sysfs so the status panel stays live
+# (500 ms) and only refreshes while the app is open.
+#
+# The status rows use *proportional* columns (a fraction of the actual row
+# width) instead of fixed pixel widths, so the layout adapts to any screen
+# size / aspect ratio while the value columns still never shift as digits
+# change.
+
+import bisect
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+import tempfile
+import time
+from array import array
+
+import gi
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+gi.require_version("PangoCairo", "1.0")
+from gi.repository import (Adw, Gdk, Gio, GLib, Gtk, Pango,  # noqa: E402
+                           PangoCairo)
+
+# where the per-user UI preferences live (metrics / chart window / language)
+UI_FILE = os.path.expanduser("~/.config/chargecap/ui.json")
+
+# ---- language ----------------------------------------------------------------
+# The UI follows the system language.  Strings are written in Chinese in the
+# source and translated here; every user-visible one goes through _(), so a
+# gettext catalogue could replace this table later without touching the call
+# sites.  Only Chinese and English are shipped.
+EN = {
+    # window / groups
+    "充电限制": "Charge limit",
+    "启动": "Enable",
+    "开启后：达到上限停止充电，降到下限恢复":
+        "Stops at the upper limit, resumes at the lower",
+    "上限": "Upper limit",
+    "下限": "Lower limit",
+    "禁止休眠": "Inhibit sleep",
+    "系统可能挂起，开启可保持网络在线":
+        "The system may suspend; on keeps the network up",
+    "指标": "Metrics",
+    "窗口": "Window",
+    # status table (English is much wider than Chinese, so the values stay
+    # short: the panel has to hold five columns on a 360px screen)
+    "电源": "Power",
+    "USB类型": "USB",
+    "电压(V)": "Voltage",
+    "功率(W)": "Power",
+    "电流": "Current",
+    "温度(°C)": "Temp",
+    "充满/设计容量(mAh)": "Full / design (mAh)",
+    "极值": "range",
+    "最大": "max",
+    "限制": "limit",
+    "已连接": "Plugged",
+    "未连接": "Unplugged",
+    "充电中": "Charging",
+    "未充电": "Idle",
+    "未知": "Unknown",
+    # chart
+    "电压": "Voltage",
+    "功率": "Power",
+    "温度": "Temperature",
+    "电量": "Charge",
+    "现在": "now",
+    "选择上方指标以显示曲线": "Select a metric above to plot",
+    # USB type help
+    "USB 类型说明": "About USB types",
+    "SDP：电脑上的 USB 口\n": "SDP: USB port on a computer\n",
+    "DCP：专用充电头\n": "DCP: dedicated charger\n",
+    "CDP：支持数据的充电口\n": "CDP: charging port that also carries data\n",
+    "未知：未识别，通常是没插线": "Unknown: nothing recognised, usually unplugged",
+    # the app's own name: the Chinese name is 电电, the project name is chargecap
+    "电电": "chargecap",
+    # the language switch in the header
+    "语言": "Language",
+    "跟随系统": "Follow system",
+}
+
+
+def _system_language():
+    """'zh' or 'en', taken from the locale the session runs in."""
+    try:
+        names = GLib.get_language_names()
+    except Exception:
+        names = []
+    for name in names:
+        code = name.split(".")[0].split("_")[0].lower()
+        if code in ("zh", "en"):
+            return code
+    return "en"
+
+
+def _stored_language():
+    """The language pushed by hand, or None when the system's is used.
+
+    Read straight from ui.json because this runs at import time -- the strings
+    are translated while the module is being built.
+    """
+    try:
+        with open(UI_FILE) as f:
+            want = (json.load(f) or {}).get("lang")
+    except Exception:
+        want = None
+    return want if want in ("zh", "en") else None
+
+
+LANGUAGE = _stored_language() or _system_language()
+# what the language menu shows as selected ("auto" = follow the system)
+LANGUAGE_CHOICE = _stored_language() or "auto"
+
+
+def _(text):
+    """The string in the user's language (Chinese is the source language)."""
+    return text if LANGUAGE == "zh" else EN.get(text, text)
+
+
+# 指标 buttons and the curves' Y axes: the full English names are wide enough
+# to eat into the plot, so both use a short form -- the button takes the unit,
+# the axis takes the standard quantity symbol (IEC for the electrical ones),
+# with the unit written under it as before.
+METRIC_BTN_EN = {"voltage_v": "V", "current_mA": "mA", "power_w": "W",
+                 "temp_c": "°C", "capacity": "%"}
+METRIC_AXIS_EN = {"voltage_v": "U", "current_mA": "I", "power_w": "P",
+                  "temp_c": "T", "capacity": "SOC"}
+
+
+def metric_button_label(key, name):
+    return METRIC_BTN_EN.get(key, name) if LANGUAGE == "en" else name
+
+
+def metric_axis_label(key, name):
+    """The tag drawn next to a curve's Y axis."""
+    return METRIC_AXIS_EN.get(key, name) if LANGUAGE == "en" else name
+
+
+REQUEST = os.path.expanduser("~/.config/chargecap/request.json")
+STATE = "/run/chargecap/state.json"
+# sysfs nodes: found by the attributes they expose rather than by name, so the
+# same build works on the OnePlus 6T (fajita) and other mainline Qualcomm
+# phones.  The names at the bottom are the fallback for the device this was
+# written on.
+SUPPLY_ROOT = "/sys/class/power_supply"
+GAUGE_ATTRS = ("capacity", "voltage_now", "current_now", "temp",
+               "constant_charge_current_max")
+CHARGER_ATTRS = ("online", "status", "usb_type", "current_max")
+GAUGE_FALLBACK = "/sys/class/power_supply/bq27411-0"
+CHARGER_FALLBACK = "/sys/class/power_supply/pmi8998-charger"
+
+
+def find_supply(required, root=SUPPLY_ROOT):
+    """The first power_supply directory exposing all of `required`."""
+    try:
+        names = sorted(os.listdir(root))
+    except OSError:
+        return None
+    for name in names:
+        path = os.path.join(root, name)
+        if all(os.path.exists(os.path.join(path, a)) for a in required):
+            return path
+    return None
+
+
+def _detected():
+    return (find_supply(GAUGE_ATTRS) or GAUGE_FALLBACK,
+            find_supply(CHARGER_ATTRS) or CHARGER_FALLBACK)
+
+
+BAT, CHG = _detected()
+
+# How long the UI keeps a just-changed setting while waiting for the daemon to
+# confirm it (the daemon polls every 3 s).  Prevents the "revert then update"
+# flicker when a control is touched.
+PENDING_TTL = 4.0
+# minimum gap enforced between upper and lower in the UI.
+# 2 keeps a 1% hysteresis band: stop at upper, resume at lower, hold in between.
+MIN_GAP = 2
+
+# status columns: fractions of the shared cell area (the space right of the row
+# title, minus the gaps between cells).  A row's cells take these in order and
+# its last cell takes the rest, so labels and values line up from row to row
+# while the widest tail value (the current range, say) still fits.  The split
+# comes from measuring the real text in the theme font (Adwaita Sans 11):
+# 最大 + 1800 (68), DCP + the info button (67), 温度(°C) (58), -489 ~ -101 (80).
+COL_FRACS = (0.312, 0.340)
+COL_SPACING = 5         # gap between the cells of a row
+CUR_GAP = 4             # even tighter gap between the 电流 row's two halves
+MAX_CELLS = 3           # cells of the widest row; fixes the shared column base
+# Hard ceiling on the cell area.  The cells' size requests are what sets the
+# window's *minimum* width, and a minimum wider than the screen is a trap: the
+# shell cannot shrink the window back after rotating to portrait, so the panel
+# stays landscape-wide on a portrait screen (and the right-pinned values fall
+# off the edge).  270 keeps the widest row's minimum (~60 + 30 + 270) inside a
+# 360px portrait screen, so the window always follows a rotation; on a wide
+# screen the leftover space simply goes to the last column / the title gutter.
+MAX_SUFFIX = 270
+# width model of one status row (measured from a widget dump on the device):
+#   row content = w - PAGE_MARGIN            (page side margins, row padding 0)
+#   title gutter + TITLE_GAP + cell area     (Adw leaves 30px before the suffix)
+PAGE_MARGIN = 24
+TITLE_GAP = 48          # 30px real gap + the title chip's padding + slack
+TITLE_CHIP_PAD = 12     # horizontal padding the key chip adds to a title
+
+CSS = """
+row.compact-status { padding: 0px; min-height: 0px; }
+row.compact-status > box { padding-top: 0px; padding-bottom: 0px; min-height: 28px; }
+/* tighter vertical rhythm: the page leaves ~24px between groups, which reads
+   as a hole on a phone screen -- the later ones pull up so the gap is 12px */
+preferencesgroup { margin-top: 0px; margin-bottom: 12px; }
+preferencesgroup:not(:first-child) { margin-top: -24px; }
+/* and pull the first group up under the header as well */
+preferencesgroup:first-child { margin-top: -14px; }
+/* keep the 指标 / 窗口 rows exactly as tall as a status row */
+row.compact-status button { min-height: 0px; padding-top: 0px; padding-bottom: 0px;
+                            padding-left: 8px; padding-right: 8px; }
+row.compact-status dropdown { min-height: 0px; }
+/* the "USB 类型" help button: just the circled i, no button chrome */
+spinbutton.limit-spin { min-height: 0px; }
+spinbutton.limit-spin text { min-height: 0px; }
+/* the +/- buttons: readable size, spaced out (they used to be zero-padded) */
+spinbutton.limit-spin button { padding: 3px 7px; min-width: 24px; min-height: 26px; }
+/* the USB 类型 help button: just the circled i, translucent, no chrome */
+button.info-btn { padding: 0px; min-width: 0px; min-height: 0px; opacity: 0.55; }
+button.info-btn button { padding: 0px 8px; min-width: 0px; min-height: 28px; }
+/* 指标: a metric button is grey until it is selected, then it takes its own
+   colour (text) over a tinted background.  Unselected is deliberately very
+   faint, so the selected few stand out at a glance.  The per-metric rules are appended
+   by metric_css(), which is why they win over this one. */
+button.metric-btn { color: alpha(@window_fg_color, 0.30); }
+/* 说明 / 注释文字：字号尽量小、紧凑（GTK CSS 只支持绝对字号） */
+.body, .subtitle { font-size: 10px; }
+/* 电流 row: its unit line matches the row title (size *and* opacity), its
+   inline keys are a touch smaller (the row carries two lines of values) */
+row.unit-row label.subtitle { font-size: 11px; opacity: 1; font-weight: 700;
+                             padding: 1px 6px; border-radius: 8px;
+                             background-color: alpha(@window_fg_color, 0.10); }
+.small-label { font-size: 11px; }
+/* keys (the names) in the status table get a flat chip behind them, like the
+   指标 buttons.  One layer only: the background.  A background *and* a drop
+   shadow reads as a raised button, so there is none of the latter. */
+.key-label { font-weight: 700; padding: 1px 6px; border-radius: 8px;
+             background-color: alpha(@window_fg_color, 0.10); }
+/* only the status table's own rows (key-chip) chip their title: the 充电限制 /
+   禁止休眠 rows keep plain titles */
+row.key-chip label.title { font-weight: 700; padding: 1px 6px;
+                           border-radius: 8px;
+                           background-color: alpha(@window_fg_color, 0.10); }
+/* the USB type help popover: small print */
+.pop-tip { font-size: 10px; }
+/* the writable limit's number sits with the other small values in its row:
+   same size, full strength (colour comes from the metric css) */
+spinbutton.limit-spin text { font-size: 11px; }
+.charge-on  { color: #2ec27e; }
+.charge-off { color: #e5a50a; }
+/* the language switch sits in the header bar and stays as small as it can */
+button.lang-btn { min-width: 0px; min-height: 0px; padding: 1px 7px; }
+button.lang-btn label { font-size: 10px; }
+"""
+
+
+def send_request(payload):
+    os.makedirs(os.path.dirname(REQUEST), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(REQUEST), prefix=".req-")
+    with os.fdopen(fd, "w") as f:
+        json.dump(payload, f)
+    os.replace(tmp, REQUEST)
+
+
+def read_state():
+    try:
+        with open(STATE) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def read_int(path):
+    try:
+        with open(path) as f:
+            return int(f.read().strip())
+    except Exception:
+        return None
+
+
+def read_str(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except Exception:
+        return None
+
+
+# The charger's usb_type file lists what it supports and brackets the type it
+# has actually detected, e.g. "Unknown SDP [DCP] CDP".
+USB_TYPE_ZH = {"Unknown": _("未知")}
+USB_TYPE_HELP = (_("SDP：电脑上的 USB 口\n")
+                 + _("DCP：专用充电头\n")
+                 + _("CDP：支持数据的充电口\n")
+                 + _("未知：未识别，通常是没插线"))
+
+
+def read_usb_type():
+    """Currently detected charger type, e.g. "DCP"."""
+    s = read_str(os.path.join(CHG, "usb_type"))
+    if not s:
+        return None
+    m = re.search(r"\[([^\]]+)\]", s)
+    if m:
+        return m.group(1)
+    tok = s.split()
+    return tok[0] if tok else None
+
+
+def cell(xalign=0.0):
+    lbl = Gtk.Label()
+    lbl.set_xalign(xalign)
+    lbl.set_halign(Gtk.Align.FILL)
+    lbl.set_wrap(False)
+    lbl.set_ellipsize(Pango.EllipsizeMode.END)
+    return lbl
+
+
+def key_label(text, colour=None, small=False):
+    """An inline key: bold, a touch dimmer than its value, optionally smaller."""
+    lbl = cell(xalign=0.0)
+    lbl.set_text(text)
+    lbl.add_css_class("key-label")
+    if small:
+        lbl.add_css_class("small-label")
+    if colour:
+        lbl.add_css_class(f"m-{colour}")
+    return lbl
+
+
+def set_charge_class(lbl, charging):
+    for c in ("charge-on", "charge-off"):
+        lbl.remove_css_class(c)
+    lbl.add_css_class("charge-on" if charging else "charge-off")
+
+
+def find_spin(widget):
+    """Depth-first search for the internal Gtk.SpinButton of an Adw.SpinRow."""
+    child = widget.get_first_child()
+    while child is not None:
+        if isinstance(child, Gtk.SpinButton):
+            return child
+        found = find_spin(child)
+        if found is not None:
+            return found
+        child = child.get_next_sibling()
+    return None
+
+
+def hug_title(row, also_subtitle=False):
+    """Make a row's own labels hug their text.
+
+    The key chip is a background on the label, so it has to wrap just the text.
+    Adw stretches the title label across the whole header instead (the chip
+    becomes a band and long titles like "USB类型" ellipsize), so those two
+    labels get halign START -- 电流's "(mA)" subtitle rides along.
+    """
+    def walk(widget):
+        if isinstance(widget, Gtk.Label):
+            classes = widget.get_css_classes()
+            if "title" in classes or (also_subtitle and "subtitle" in classes):
+                widget.set_halign(Gtk.Align.START)
+            if "subtitle" in classes:
+                # a squeezed "(mA)" must ellipsize, not wrap into three lines
+                widget.set_wrap(False)
+                widget.set_ellipsize(Pango.EllipsizeMode.END)
+        child = widget.get_first_child()
+        while child is not None:
+            walk(child)
+            child = child.get_next_sibling()
+    walk(row)
+
+
+# ---- chart: the selectable metrics.  Each one has its own colour (the same
+# colour is reused by the matching item in the status panel and by its toggle
+# button) and a fixed Y axis side, so selecting/unselecting never makes an axis
+# jump to the other edge.
+#     key,        名称,  单位,  颜色,      刻度格式,   Y 轴,   固定量程
+METRICS = (
+    ("voltage_v", _("电压"), "V", "#3584e4", "{:.3f}", "left", None),
+    ("current_mA", _("电流"), "mA", "#e01b24", "{:+.0f}", "left", None),
+    ("power_w", _("功率"), "W", "#9141ac", "{:.2f}", "left", None),
+    ("temp_c", _("温度"), "°C", "#e5a50a", "{:.1f}", "right", None),
+    # 电量 is a percentage, so 0-100 is a better axis than an auto-zoomed one
+    # (the gauge reports whole percent, which an auto zoom turns into steps)
+    ("capacity", _("电量"), "%", "#2ec27e", "{:.0f}", "right", (0.0, 100.0)),
+)
+METRIC_KEYS = tuple(m[0] for m in METRICS)
+METRIC_INFO = {m[0]: m for m in METRICS}
+
+# The 指标 buttons: a selected metric is written in its own colour, a little
+# brighter than the curve, so it stays readable on the tinted background.
+METRIC_BRIGHT = {
+    "voltage_v": "#62a0ea",
+    "current_mA": "#f66151",
+    "power_w": "#c061cb",
+    "temp_c": "#f5c211",
+    "capacity": "#57e389",
+}
+
+# metrics selected the first time the app runs (no saved ui.json yet)
+DEFAULT_METRICS = ("voltage_v", "current_mA")
+
+
+def metric_css():
+    """One colour class per metric: .m-<key> colours a widget, .mt-<key>
+    colours the title of a row (the row's own class must not carry the colour,
+    or it would be inherited by every label inside it).  The 指标 buttons get
+    their colour only while they are selected, plus a background tint in the
+    same colour."""
+    out = []
+    for key, _name, _unit, color, _fmt, _side, _rng in METRICS:
+        bright = METRIC_BRIGHT.get(key, color)
+        out.append(f".m-{key} {{ color: {color}; }}")
+        out.append(f".mt-{key} .title {{ color: {color}; }}")
+        # the unit line under a title takes the same colour as the title
+        out.append(f".mt-{key} .subtitle {{ color: {color}; }}")
+        out.append(f"button.metric-btn.k-{key}:checked {{"
+                   f" color: {bright};"
+                   f" background-color: alpha({color}, 0.30); }}")
+    # the number in the writable-limit spin button is a 电流 value: same red,
+    # without colouring the spin's own buttons
+    out.append("spinbutton.limit-spin text { color: "
+               f"{METRIC_INFO['current_mA'][3]}; }}")
+    return "\n".join(out)
+
+
+# The status table has to hold five columns on a 360px screen, and text width
+# differs a lot between languages: Chinese says the same thing in fewer pixels
+# than English does.  So each language declares its own type scale for that
+# table instead of the columns being retuned per language -- wide languages
+# step down a point, and adding a language means adding one line here.
+SCALE = {
+    "zh": {"title": 11, "key": 11, "small": 11, "value": 11, "sub": 11,
+           "spin": 11, "btn": 24, "btnpad": 7},
+    "en": {"title": 10, "key": 10, "small": 10, "value": 10, "sub": 10,
+           "spin": 10, "btn": 20, "btnpad": 5},
+}
+
+
+def scale_css():
+    """Font sizes of the status table for the current language."""
+    s = SCALE.get(LANGUAGE, SCALE["en"])
+    return ("row.key-chip label.title { font-size: %dpx; }\n"
+            "row.key-chip label { font-size: %dpx; }\n"
+            ".key-label { font-size: %dpx; }\n"
+            ".small-label { font-size: %dpx; }\n"
+            "row.unit-row label.subtitle { font-size: %dpx; }\n"
+            "spinbutton.limit-spin text { font-size: %dpx; }\n"
+            "spinbutton.limit-spin button { min-width: %dpx;"
+            " padding-left: %dpx; padding-right: %dpx; }\n"
+            "row.metric-row label, row.metric-row button,"
+            " row.metric-row dropdown { font-size: %dpx; }\n"
+            % (s["title"], s["value"], s["key"], s["small"], s["sub"],
+               s["spin"], s["btn"], s["btnpad"], s["btnpad"], s["value"]))
+
+
+WINDOWS = (("30s", 30), ("1min", 60), ("2min", 120), ("5min", 300),
+           ("10min", 600), ("30min", 1800), ("1h", 3600),
+           ("2h", 7200), ("4h", 14400), ("8h", 28800),
+           ("12h", 43200), ("18h", 64800), ("24h", 86400),
+           ("36h", 129600), ("48h", 172800))
+SAMPLE_MS = 500
+# samples kept for the longest window (48 h at 2 Hz), plus a little slack
+MAX_SAMPLES = 48 * 3600 * 1000 // SAMPLE_MS + 16
+
+def load_ui():
+    try:
+        with open(UI_FILE) as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_ui(d):
+    try:
+        os.makedirs(os.path.dirname(UI_FILE), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(UI_FILE), prefix=".ui-")
+        with os.fdopen(fd, "w") as f:
+            json.dump(d, f)
+        os.replace(tmp, UI_FILE)
+    except Exception:
+        pass
+
+
+def _rgb(hex_color):
+    h = hex_color.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+
+
+class LiveChart(Gtk.DrawingArea):
+    """Overlays the selected metrics on one rolling chart.
+
+    Every selected curve is auto-scaled to its own min/max so its trend stays
+    visible; its Y ticks are drawn on the left or right edge in the curve's own
+    colour.  Samples live in memory only and disappear when the app closes.
+    """
+
+    COL_W = 30          # width of one Y-axis column (name / unit / ticks)
+    PAD_X = 4           # gap between the plot and the nearest tick column
+    PAD_T, PAD_B = 26, 13   # top leaves room for the two-line axis header
+    PTS_PER_PX = 2      # decimation cap: at most 2 drawn points per pixel
+    LINE_W = 0.6        # curve thickness
+    GRID_W = 0.5        # grid must stay thinner than the curves
+    TICKS = (0.0, 0.25, 0.5, 0.75, 1.0)     # 5 divisions, grid lines on them
+    GRID_DIVS = 5       # divisions of the time axis
+    GRID_RGBA = (0.5, 0.5, 0.5, 0.10)       # faint: it stays under the curves
+    _LH = 0             # cached line height of the axis font
+
+    def __init__(self):
+        super().__init__()
+        self.set_size_request(-1, 139)   # +15px, as asked
+        self.set_hexpand(True)
+        self.set_draw_func(self._draw)
+        self.selected = []          # selected metric keys, in METRICS order
+        self.window_secs = 60
+        # arrays instead of lists: a 48 h window is 345k samples per metric,
+        # which would be ~50 MB as boxed Python floats and ~14 MB as doubles
+        self._ts = array("d")       # shared timestamps (monotonic)
+        self._data = {k: array("d") for k in METRIC_KEYS}
+        self._font = Pango.FontDescription("Sans")
+        # a small font keeps the tick columns narrow so the plot stays wide
+        self._font.set_absolute_size(8 * Pango.SCALE)
+
+    # ---- data ----
+    def add_sample(self, values):
+        """values: {key: float|None}; called from the UI refresh timer."""
+        self._ts.append(time.monotonic())
+        for k in METRIC_KEYS:
+            v = values.get(k)
+            self._data[k].append(float("nan") if v is None else float(v))
+        if len(self._ts) > MAX_SAMPLES:
+            drop = len(self._ts) - MAX_SAMPLES
+            del self._ts[:drop]
+            for k in METRIC_KEYS:
+                del self._data[k][:drop]
+
+    def _series(self, key, cutoff):
+        """Visible (t, v) pairs for one metric, starting at `cutoff`.
+
+        Points are picked with a stride instead of building them all first and
+        thinning afterwards, so a 48 h window costs the same as a 30 s one.
+        """
+        ts, vs = self._ts, self._data[key]
+        i = bisect.bisect_left(ts, cutoff)
+        n = len(ts) - i
+        if n <= 0:
+            return []
+        step = max(1, n // max(2, int(self.get_width() * self.PTS_PER_PX)))
+        out = [(ts[j], vs[j]) for j in range(i, len(ts), step) if vs[j] == vs[j]]
+        last = len(vs) - 1
+        if vs[last] == vs[last] and (not out or out[-1][0] != ts[last]):
+            out.append((ts[last], vs[last]))
+        return out
+
+    # ---- drawing ----
+    def _text(self, cr, x, y, s, rgb, align="left"):
+        """Draw `s` with Pango at top-left (x, y), shifted by `align`."""
+        layout = PangoCairo.create_layout(cr)
+        layout.set_font_description(self._font)
+        layout.set_text(s, -1)
+        w, h = layout.get_pixel_size()
+        if align == "right":
+            x -= w
+        elif align == "center":
+            x -= w / 2
+        cr.set_source_rgb(*rgb)
+        cr.move_to(x, y)
+        PangoCairo.show_layout(cr, layout)
+        return w, h
+
+    def _line_height(self, cr):
+        """Height of one line of the axis font (measured once, off-screen)."""
+        if not LiveChart._LH:
+            LiveChart._LH = self._text(cr, -200, -200, "0", (0, 0, 0))[1]
+        return LiveChart._LH
+
+    def _measure(self, cr, s):
+        """Width of `s` in the axis font, without drawing it."""
+        layout = PangoCairo.create_layout(cr)
+        layout.set_font_description(self._font)
+        layout.set_text(s, -1)
+        return layout.get_pixel_size()[0]
+
+    def _draw(self, _area, cr, width, height):
+        sel = [k for k in METRIC_KEYS if k in self.selected]
+        if not sel:
+            self._text(cr, width / 2, height / 2, _("选择上方指标以显示曲线"),
+                       (0.55, 0.55, 0.55), "center")
+            return
+
+        left = [k for k in sel if METRIC_INFO[k][5] == "left"]
+        right = [k for k in sel if METRIC_INFO[k][5] == "right"]
+        ml = self.PAD_X + self.COL_W * len(left)
+        mr = self.PAD_X + self.COL_W * len(right)
+        pw = max(10, width - ml - mr)
+        ph = max(10, height - self.PAD_T - self.PAD_B)
+        top, bottom = self.PAD_T, self.PAD_T + ph
+        now = time.monotonic()
+        cutoff = now - self.window_secs
+        span = max(1e-6, now - cutoff)
+
+        # plot frame
+        cr.set_source_rgba(0.5, 0.5, 0.5, 0.35)
+        cr.set_line_width(1)
+        cr.rectangle(ml + .5, top + .5, pw - 1, ph - 1)
+        cr.stroke()
+
+        # grid: only on the tick marks, five divisions each way, very faint
+        cr.set_source_rgba(*self.GRID_RGBA)
+        cr.set_line_width(self.GRID_W)
+        for f in self.TICKS[1:-1]:
+            y = bottom - f * ph
+            cr.move_to(ml, y)
+            cr.line_to(ml + pw, y)
+        for i in range(1, self.GRID_DIVS):
+            x = ml + pw * i / self.GRID_DIVS
+            cr.move_to(x, top)
+            cr.line_to(x, bottom)
+        cr.stroke()
+
+        for key in sel:
+            _k, name, unit, color, fmt, side, fixed = METRIC_INFO[key]
+            name = metric_axis_label(key, name)
+            rgb = _rgb(color)
+            pts = self._series(key, cutoff)
+            if not pts:
+                continue
+            if fixed:
+                lo, hi = fixed
+            else:
+                vals = [v for _, v in pts]
+                lo, hi = min(vals), max(vals)
+                pad = (hi - lo) * 0.1
+                lo, hi = lo - pad, hi + pad
+                if hi - lo < 1e-9:
+                    lo, hi = lo - 0.5, hi + 0.5
+            scale = ph / (hi - lo)
+
+            # the curve
+            cr.set_source_rgb(*rgb)
+            cr.set_line_width(self.LINE_W)
+            for n, (t, v) in enumerate(pts):
+                x = ml + pw * (t - cutoff) / span
+                y = bottom - (v - lo) * scale
+                if n == 0:
+                    cr.move_to(x, y)
+                else:
+                    cr.line_to(x, y)
+            cr.stroke()
+
+            # this curve's own Y axis, on its fixed side: name over unit, then
+            # five ticks down the side of the plot (the same divisions the grid
+            # lines use).  Columns are packed from the plot outwards, so gaps
+            # never appear between them.
+            col = (left if side == "left" else right).index(key)
+            if side == "left":
+                ax, align = ml - self.PAD_X - self.COL_W * col, "right"
+            else:
+                ax, align = width - mr + self.PAD_X + self.COL_W * col, "left"
+            lh = self._line_height(cr)
+            self._text(cr, ax, 0, name, rgb, align)
+            self._text(cr, ax, lh, unit, rgb, align)
+            for f in self.TICKS:
+                if f >= 1.0:
+                    y = top + 1
+                elif f <= 0.0:
+                    y = bottom - lh - 1
+                else:
+                    y = bottom - f * ph - lh / 2
+                self._text(cr, ax, y, fmt.format(lo + f * (hi - lo)), rgb, align)
+
+        # time axis: a label on every division, so the spacing reads as even.
+        # A label that would touch its neighbour is left out, which only
+        # happens on a very narrow plot or a very long window.
+        dim = (0.55, 0.55, 0.55)
+        th = self._line_height(cr)
+        prev_start = None
+        for f in reversed(self.TICKS):
+            s = self._fmt_offset(self.window_secs * (1.0 - f))
+            w = self._measure(cr, s)
+            x = max(ml, min(ml + pw * f - w / 2, ml + pw - w))
+            if prev_start is not None and x + w > prev_start - 6:
+                continue
+            self._text(cr, x, height - th, s, dim, "left")
+            prev_start = x
+
+    @staticmethod
+    def _fmt_offset(secs):
+        """A time offset as M:SS (under an hour) or H:MM, plus 现在 at zero.
+
+        One shape for the whole axis: the window's own dropdown says which of
+        the two units a chart is using.
+        """
+        if secs < 0.5:
+            return _("现在")
+        total = int(secs + 0.5)
+        if total < 3600:
+            return f"-{total // 60}:{total % 60:02d}"
+        return f"-{total // 3600}:{total % 3600 // 60:02d}"
+
+
+class Window(Adw.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app, title=_("电电"))
+        self.set_default_size(360, 720)
+        self._loading = False
+        # signed current extremes, reset every time the window opens
+        self.i_min = None
+        self.i_max = None
+        # last charger type the driver really reported (it says Unknown when
+        # no input is attached)
+        self._usb_type = None
+        # setting we just changed, waiting for the daemon to confirm it
+        self._pending = None
+        self._pending_at = 0.0
+        self._cols = []          # one tuple of cells per status row
+        # the 电流 row is a 2x2 block with its own two widths (left / right half)
+        self._cur_cells = None
+        self._title_texts = []   # row titles, used to size the title reserve
+        self._title_w = 0
+        self._suffix_w = 200     # width of the area right of the row titles
+        self._clamp_max = 0      # the page's content cap (read from Adw.Clamp)
+        self._last_w = -1
+        self._dbg_key = None      # CL_DEBUG=1 prints on change only
+        self._chart_ready = False   # guard while restoring the saved chart prefs
+
+        provider = Gtk.CssProvider()
+        provider.load_from_string(CSS + metric_css() + scale_css())
+        disp = self.get_display() or Gdk.Display.get_default()
+        if disp is not None:
+            Gtk.StyleContext.add_provider_for_display(
+                disp, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+        tv = Adw.ToolbarView()
+        header = Adw.HeaderBar()
+        header.pack_end(self._language_button())
+        tv.add_top_bar(header)
+        page = Adw.PreferencesPage()
+        tv.set_content(page)
+        self.set_content(tv)
+
+        # ---- limits ----
+        # only 启动 carries a note; 上限 / 下限 are self-explanatory and the
+        # rows stay as compact as the status rows below
+        g_lim = Adw.PreferencesGroup(title=_("充电限制"))
+        self.row_enable = Adw.SwitchRow(
+            title=_("启动"), subtitle=_("开启后：达到上限停止充电，降到下限恢复"))
+        g_lim.add(self.row_enable)
+        self.row_upper = Adw.SpinRow(
+            title=_("上限"),
+            adjustment=Gtk.Adjustment(value=70, lower=5, upper=100, step_increment=1))
+        self.row_lower = Adw.SpinRow(
+            title=_("下限"),
+            adjustment=Gtk.Adjustment(value=68, lower=5, upper=100, step_increment=1))
+        g_lim.add(self.row_upper)
+        g_lim.add(self.row_lower)
+        for row in (self.row_enable, self.row_upper, self.row_lower):
+            row.add_css_class("compact-status")
+        page.add(g_lim)
+
+        # show the unit on the spin value ("70%")
+        for row in (self.row_upper, self.row_lower):
+            spin = find_spin(row)
+            if spin is not None:
+                spin.connect("output", self._spin_output)
+
+        self.row_enable.connect("notify::active", self._on_changed)
+        self.row_upper.connect("notify::value", self._on_upper_changed)
+        self.row_lower.connect("notify::value", self._on_lower_changed)
+
+        # ---- power ----
+        # 无标题分组：只保留「禁止休眠」这一行，再无用的标题占位
+        g_pow = Adw.PreferencesGroup()
+        self.row_inhibit = Adw.SwitchRow(
+            title=_("禁止休眠"),
+            subtitle=_("系统可能挂起，开启可保持网络在线"))
+        self.row_inhibit.add_css_class("compact-status")
+        g_pow.add(self.row_inhibit)
+        page.add(g_pow)
+        self.row_inhibit.connect("notify::active", self._on_changed)
+
+        # ---- status: proportional columns, compact rows ----
+        # no group title: the rows speak for themselves and every pixel of
+        # height counts on a phone screen
+        self.group_status = Adw.PreferencesGroup()
+        self.f = {}
+        self._spread = []        # rows whose values are spread evenly
+        self.spin_limit = None   # writable USB input current limit (mA)
+
+        def info_row(items, resizable=True):
+            """Add one status row.
+
+            items is a tuple of (label, field, colour[, extra]): the first label
+            becomes the row title in the left gutter, the others label the values
+            that follow it.  colour names a metric (or is None) and tints both
+            the label and its value with that metric's curve colour.  `extra` is
+            a widget that rides to the right of the value (the USB help button);
+            when `field` is None the value label is left out and `extra` becomes
+            the value cell itself (the writable current limit).
+
+            Only resizable rows take part in the shared columns and in the title
+            gutter: the capacity row at the bottom has a long title of its own
+            and sizes to its content instead.
+            """
+            row = Adw.ActionRow(title=items[0][0])
+            row.set_title_lines(1)
+            row.add_css_class("compact-status")
+            row.add_css_class("key-chip")
+            hug_title(row)
+            if items[0][2]:
+                # colour the title through the row, so it is not inherited
+                # by the values
+                row.add_css_class(f"mt-{items[0][2]}")
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                          spacing=COL_SPACING)
+            box.set_valign(Gtk.Align.CENTER)
+            cells = []
+            for n, item in enumerate(items):
+                label, field, colour = item[0], item[1], item[2]
+                extra = item[3] if len(item) > 3 else None
+                if n:
+                    # an inline key: bold and a touch dimmer, so it reads as a
+                    # name and not as another value
+                    lab = key_label(label, colour)
+                    box.append(lab)
+                    cells.append(lab)
+                if field is None:
+                    node = extra
+                else:
+                    # every value hugs the left edge of its cell, so the values
+                    # of a column start at the same place down the panel
+                    val = cell(xalign=0.0)
+                    if colour:
+                        val.add_css_class(f"m-{colour}")
+                    self.f[field] = val
+                    if extra is None:
+                        node = val
+                    else:
+                        # value first, then the extra widget, in one cell
+                        node = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                                       spacing=4)
+                        node.set_valign(Gtk.Align.CENTER)
+                        node.append(val)
+                        node.append(extra)
+                box.append(node)
+                cells.append(node)
+            row.add_suffix(box)
+            self.group_status.add(row)
+            if resizable:
+                self._title_texts.append(items[0][0])
+                self._cols.append(tuple(cells))
+
+        def spread_row(title, items):
+            """A row of bare values spread evenly across the row."""
+            row = Adw.ActionRow(title=title)
+            row.set_title_lines(1)
+            row.add_css_class("compact-status")
+            row.add_css_class("key-chip")
+            hug_title(row)
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+            box.set_homogeneous(True)     # equal thirds
+            box.set_valign(Gtk.Align.CENTER)
+            for field, colour in items:
+                val = cell(xalign=0.0)   # left-aligned in its third
+                if colour:
+                    val.add_css_class(f"m-{colour}")
+                box.append(val)
+                self.f[field] = val
+            row.add_suffix(box)
+            self.group_status.add(row)
+            self._title_texts.append(title)
+            # keep the columns in step with the other rows' cell area
+            self._spread.append(box)
+
+        # 电源: three bare values, no keys.  已连接 / 充电中 green,
+        # 未连接 / 未充电 yellow, 电量 plain.
+        spread_row(_("电源"), (("plugged", None), ("status", None),
+                            ("capacity", None)))
+
+        # USB 类型 with a help button, then 温度 on the same row
+        help_btn = Gtk.MenuButton()
+        help_icon = Gtk.Image.new_from_icon_name("help-about-symbolic")
+        help_icon.set_pixel_size(10)     # a hint, not a button-sized target
+        help_btn.set_child(help_icon)
+        help_btn.set_has_frame(False)
+        help_btn.add_css_class("info-btn")
+        help_btn.set_valign(Gtk.Align.CENTER)
+        help_btn.set_tooltip_text(_("USB 类型说明"))
+        tip = Gtk.Label(label=USB_TYPE_HELP)
+        tip.add_css_class("pop-tip")
+        tip.set_xalign(0.0)
+        tip.set_margin_start(12)
+        tip.set_margin_end(12)
+        tip.set_margin_top(10)
+        tip.set_margin_bottom(10)
+        pop = Gtk.Popover()
+        pop.set_child(tip)
+        help_btn.set_popover(pop)
+        info_row(((_("USB类型"), "usb_type", None, help_btn),
+                  (_("温度(°C)"), "temp_c", "temp_c")))
+
+        info_row(((_("电压(V)"), "voltage_v", "voltage_v"),
+                  (_("功率(W)"), "power_w", "power_w")))
+        # 电流: the reading and its extremes on top, the rated maximum and the
+        # writable limit below.  Both lines share one set of columns, so the
+        # whole block reads as a single item instead of two separate rows.
+        self.spin_limit = Gtk.SpinButton(
+            adjustment=Gtk.Adjustment(value=0, lower=0, upper=1800,
+                                      step_increment=100, page_increment=500))
+        self.spin_limit.set_numeric(True)
+        self.spin_limit.set_width_chars(2)
+        self.spin_limit.set_valign(Gtk.Align.CENTER)
+        self.spin_limit.add_css_class("limit-spin")
+        self.spin_limit.connect("value-changed", self._on_limit_changed)
+
+        def current_row():
+            """电流 as one item: values on the left, limits on the right.
+
+            电流 / 限制 on the first line, 极值 / 最大 under them, so the two
+            halves read as one block instead of two separate rows.
+            """
+            # the unit sits on a second line so the title column stays as
+            # narrow as the other rows' instead of pushing the values right
+            row = Adw.ActionRow(title=_("电流"))
+            row.set_subtitle("(mA)")
+            row.set_title_lines(1)
+            row.add_css_class("compact-status")
+            row.add_css_class("key-chip")
+            row.add_css_class("unit-row")
+            row.add_css_class("mt-current_mA")
+            hug_title(row, also_subtitle=True)
+            grid = Gtk.Grid()
+            grid.set_column_spacing(CUR_GAP)
+            grid.set_row_spacing(2)
+            grid.set_valign(Gtk.Align.CENTER)
+
+            def key(text):
+                """An inline key: the row's red, bold, one size smaller."""
+                return key_label(text, "current_mA", small=True)
+
+            def pair(key_text, node):
+                """A key with its value right after it, packed left."""
+                box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+                box.set_valign(Gtk.Align.CENTER)
+                box.append(key(key_text))
+                box.append(node)
+                return box
+
+            reading = cell(xalign=0.0)
+            reading.add_css_class("m-current_mA")
+            self.f["current_a"] = reading
+            grid.attach(reading, 0, 0, 1, 1)
+
+            # the three secondary values share one size and one colour: the row's
+            # own red, at full strength
+            def small_value():
+                lbl = cell(xalign=0.0)
+                lbl.add_css_class("m-current_mA")
+                lbl.add_css_class("small-label")
+                return lbl
+
+            rng = small_value()
+            self.f["current_range"] = rng
+            box_rng = pair(_("极值"), rng)
+            grid.attach(box_rng, 0, 1, 1, 1)
+
+            val_max = small_value()
+            self.f["current_max"] = val_max
+            box_max = pair(_("最大"), val_max)
+            grid.attach(box_max, 1, 1, 1, 1)
+
+            # 限制 hugs the left of the right half and the spin takes the space
+            # that frees up, so the control never looks squeezed
+            box_lim = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+            box_lim.set_valign(Gtk.Align.CENTER)
+            box_lim.append(key(_("限制")))
+            self.spin_limit.set_hexpand(True)
+            box_lim.append(self.spin_limit)
+            grid.attach(box_lim, 1, 0, 1, 1)
+
+            row.add_suffix(grid)
+            self.group_status.add(row)
+            self._title_texts.append(_("电流"))
+            # one size driver per column: these two cells fix the two widths
+            self._cur_cells = (reading, box_max, box_rng)
+
+        current_row()
+
+        # last row: capacity in mAh and the resulting health percentage.
+        # This one sizes to its own content (its title is long).
+        info_row(((_("充满/设计容量(mAh)"), "charge_full", None),
+                  ("", "health", None)), resizable=False)
+        page.add(self.group_status)
+
+        # ---- chart: one overlaid rolling chart, no data kept after closing ----
+        self.chart = LiveChart()
+        ui = load_ui()
+        saved = [k for k in (ui.get("metrics") or []) if k in METRIC_KEYS]
+        self.chart.selected = saved or list(DEFAULT_METRICS)
+        self.chart.window_secs = ui.get("window") if ui.get("window") in (
+            w[1] for w in WINDOWS) else 60
+
+        g_chart = Adw.PreferencesGroup(title=_("指标"))
+        # one control row: the metric buttons against the left edge, the window
+        # selector against the right
+        row_ctl = Adw.ActionRow()
+        row_ctl.add_css_class("compact-status")
+        # the metric buttons and the window selector are sized by scale_css(),
+        # so this row matches the status table above it in every language
+        row_ctl.add_css_class("metric-row")
+        ctl = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        ctl.set_valign(Gtk.Align.CENTER)
+        mbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        mbox.add_css_class("linked")
+        self.toggles = {}
+        for key, name, _unit, _color, _fmt, _side, _rng in METRICS:
+            btn = Gtk.ToggleButton(label=metric_button_label(key, name))
+            # colour and tint come from the CSS, only while the button is on
+            btn.add_css_class("metric-btn")
+            btn.add_css_class(f"k-{key}")
+            btn.set_active(key in self.chart.selected)
+            btn.connect("toggled", self._on_metric_toggled, key)
+            mbox.append(btn)
+            self.toggles[key] = btn
+        ctl.append(mbox)
+
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        ctl.append(spacer)
+        wlabel = Gtk.Label(label=_("窗口"))
+        ctl.append(wlabel)
+        self.dd_window = Gtk.DropDown.new_from_strings(
+            strings=[w[0] for w in WINDOWS])
+        self.dd_window.set_valign(Gtk.Align.CENTER)
+        self.dd_window.set_selected(
+            next(i for i, w in enumerate(WINDOWS)
+                 if w[1] == self.chart.window_secs))
+        self.dd_window.connect("notify::selected", self._on_window_changed)
+        ctl.append(self.dd_window)
+        row_ctl.set_child(ctl)
+        g_chart.add(row_ctl)
+
+        row_chart = Adw.ActionRow()
+        row_chart.set_activatable(False)
+        # no extra padding around the plot: it is the last thing on the page
+        row_chart.add_css_class("compact-status")
+        row_chart.set_child(self.chart)
+        g_chart.add(row_chart)
+        page.add(g_chart)
+        self._chart_ready = True
+
+        # react to the shell resizing us (rotation) instead of waiting for the
+        # next refresh tick
+        self.connect("notify::width", self._on_resized)
+        # A rotation can resize the output while our own size requests keep the
+        # window from shrinking back with it, so react to the monitor changing
+        # as well and recompute the columns from the new geometry.
+        try:
+            self.get_display().connect(
+                "monitors-changed", lambda *_: self._on_monitors_changed())
+        except Exception:
+            pass
+
+        GLib.timeout_add(SAMPLE_MS, self.refresh)
+        self.refresh()
+
+    # ---- responsive status columns ----
+    def _screen_width(self):
+        """Logical width of the monitor, or 0 when it cannot be read."""
+        try:
+            mon = self.get_display().get_monitors().get_item(0)
+            geo = mon.get_geometry()
+            if geo.width > 1:
+                return geo.width
+        except Exception:
+            pass
+        return 0
+
+    def _page_cap(self):
+        """The content width cap the Adw page applies, or 0 when unknown.
+
+        AdwPreferencesPage puts its content in an Adw.Clamp; on a wide screen
+        (landscape) that is what limits the rows, not the window.  Reading the
+        cap keeps the column model in step with the real page width without
+        asking the widgets how wide they turned out (which would let the
+        size requests feed back into their own measurement).
+        """
+        if self._clamp_max:
+            return self._clamp_max
+        def find(widget):
+            if type(widget).__name__ == "Clamp":
+                return widget
+            child = widget.get_first_child()
+            while child is not None:
+                found = find(child)
+                if found is not None:
+                    return found
+                child = child.get_next_sibling()
+            return None
+        clamp = find(self)
+        if clamp is not None:
+            try:
+                self._clamp_max = int(clamp.get_maximum_size())
+            except Exception:
+                self._clamp_max = 0
+        return self._clamp_max
+
+    def _cell_widths(self, n):
+        """Size requests for a row of n cells (values and inline labels).
+
+        Every cell but the last takes one of the shared columns, so values and
+        labels line up from row to row; the last cell takes the rest, which
+        keeps the widest tail value (the current range, say) from ellipsizing.
+        """
+        base = self._suffix_w - (MAX_CELLS - 1) * COL_SPACING
+        ws = [int(base * f) for f in COL_FRACS[:n - 1]]
+        ws.append(max(40, self._suffix_w - sum(ws) - (n - 1) * COL_SPACING))
+        return ws
+
+    def _apply_col_widths(self):
+        # The shell forces the window to the screen size, but these columns set
+        # a hard minimum width through set_size_request(), so the window can
+        # refuse to shrink.  Read the width from the monitor as well and keep
+        # the smaller of the two: the monitor always follows a rotation, so
+        # rotating back to portrait really recomputes the columns instead of
+        # keeping the landscape sizes and overflowing the screen.
+        w = self.get_width()
+        mw = self._screen_width()
+        if mw > 1:
+            w = mw if w <= 1 else min(w, mw)
+        if w <= 1:
+            w = 320
+        # The Adw page clamps its content (landscape gives the window a lot of
+        # width the rows never see: the rows were 684px wide on a 760px window,
+        # which squeezed every status title into "…").  Clamp to the cap the
+        # page really applies -- the clamp's own maximum -- so the columns are
+        # never wider than the rows.  It only ever makes the columns narrower,
+        # so a wrong guess costs a little slack in the title gutter.
+        cap = self._page_cap()
+        if cap > 1:
+            w = min(w, cap)
+        # page side margins only: the row's own padding is zeroed in the CSS
+        inner = max(120, w - PAGE_MARGIN)
+        # reserve room for the widest row title, measured from real text, so
+        # the title is never squeezed into an ellipsis by a wide value column.
+        # The chip behind a title adds its own padding, which the plain text
+        # measurement does not include (English titles are wide enough that
+        # missing it showed up as "Voltag…").
+        if self._title_w <= 0:
+            m = 0
+            for t in self._title_texts:
+                try:
+                    m = max(m, self.create_pango_layout(t).get_pixel_size()[0])
+                except Exception:
+                    pass
+            self._title_w = (m or 40) + TITLE_CHIP_PAD
+        self._suffix_w = max(80, inner - (int(self._title_w) + TITLE_GAP))
+        # never demand more width than a portrait screen can hold, or the
+        # window's minimum keeps the shell from shrinking us (see MAX_SUFFIX)
+        self._suffix_w = min(self._suffix_w, MAX_SUFFIX)
+        if os.environ.get("CL_DEBUG"):
+            # diagnosis only (CL_DEBUG=1): what the window's own minimum is,
+            # next to the numbers the model uses
+            try:
+                res = self.measure(Gtk.Orientation.HORIZONTAL, -1)
+                wmin = res[0] if isinstance(res, tuple) else res
+            except Exception:
+                wmin = -1
+            key = (self.get_width(), mw, wmin, int(self._suffix_w))
+            if key != self._dbg_key:
+                self._dbg_key = key
+                print("[cl] win=%s win_min=%s screen=%s clamp=%s inner=%s "
+                      "suffix=%s max=%s full=%s" % (
+                          self.get_width(), wmin, mw, self._page_cap(),
+                          inner, self._suffix_w, self.is_maximized(),
+                          self.is_fullscreen()), flush=True)
+        for cells in self._cols:
+            for cell, cw in zip(cells, self._cell_widths(len(cells))):
+                cell.set_size_request(cw, -1)
+        # 电流: the left half is as narrow as its own content, so 限制 / 最大
+        # start as far left as they can.  The width follows the live text of
+        # "极值 ..." -- i_min/i_max only ever widen, so it moves rarely.
+        if self._cur_cells is not None:
+            left = 60
+            for cell_w in (self._cur_cells[0], self._cur_cells[2]):
+                try:
+                    res = cell_w.measure(Gtk.Orientation.HORIZONTAL, -1)
+                    left = max(left, (res[1] if isinstance(res, tuple) else res))
+                except Exception:
+                    pass
+            # the spin keeps its own minimum (the number + the two buttons);
+            # the budget is measured, not guessed: 4 digits + 2 buttons ≈ 100px
+            left = min(int(left), max(60, self._suffix_w - 100 - CUR_GAP))
+            self._cur_cells[0].set_size_request(left, -1)
+            self._cur_cells[1].set_size_request(
+                max(48, self._suffix_w - left - CUR_GAP), -1)
+        # rows with spread values just need the same cell area
+        for box in self._spread:
+            box.set_size_request(self._suffix_w, -1)
+
+    def _on_resized(self, *_):
+        if self._cols:
+            self._apply_col_widths()
+
+    def _on_monitors_changed(self):
+        """The output rotated: recompute even if we were not resized."""
+        self._last_w = -1
+        if self._cols:
+            self._apply_col_widths()
+
+    def _spin_output(self, spin):
+        spin.set_text(f"{int(round(spin.get_value()))}%")
+        return True
+
+    # ---- UI -> daemon ----
+    def _send(self):
+        if self._loading:
+            return
+        payload = {
+            "command": "set",
+            "limit_enabled": bool(self.row_enable.get_active()),
+            "upper": int(self.row_upper.get_value()),
+            "lower": int(self.row_lower.get_value()),
+            "inhibit_sleep": bool(self.row_inhibit.get_active()),
+            "current_limit": int(self.spin_limit.get_value()),
+        }
+        send_request(payload)
+        self._pending = payload
+        self._pending_at = time.monotonic()
+
+    def _on_changed(self, *_):
+        self._send()
+
+    def _on_limit_changed(self, *_):
+        self._send()
+
+    def _on_upper_changed(self, *_):
+        if self._loading:
+            return
+        up = int(self.row_upper.get_value())
+        lo = int(self.row_lower.get_value())
+        if lo > up - MIN_GAP:                     # keep 下限 at least 2 below 上限
+            self._loading = True
+            self.row_lower.set_value(max(5, up - MIN_GAP))
+            self._loading = False
+        self._send()
+
+    def _on_lower_changed(self, *_):
+        if self._loading:
+            return
+        up = int(self.row_upper.get_value())
+        lo = int(self.row_lower.get_value())
+        if lo > up - MIN_GAP:                     # push 上限 up to keep the gap
+            self._loading = True
+            self.row_upper.set_value(min(100, lo + MIN_GAP))
+            self._loading = False
+        self._send()
+
+    # ---- chart controls ----
+    def _save_ui(self):
+        if not self._chart_ready:
+            return
+        # keep whatever else is in there (the language choice, for one)
+        d = load_ui()
+        d.update({"metrics": list(self.chart.selected),
+                  "window": self.chart.window_secs})
+        save_ui(d)
+
+    # ---- language ----
+    def _language_button(self):
+        """The language switch: a couple of characters, in the header bar.
+
+        Plain buttons in a popover rather than a Gio menu: the action had to
+        live on the application for a menu item to find it, and even then a tap
+        could do nothing.  A "clicked" handler either works or raises.
+        """
+        btn = Gtk.MenuButton()
+        btn.add_css_class("flat")
+        btn.add_css_class("lang-btn")
+        self._lang_label = Gtk.Label(label="中" if LANGUAGE == "zh" else "EN")
+        btn.set_child(self._lang_label)
+        btn.set_tooltip_text(_("语言"))
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        group = None
+        for value, label in (("auto", _("跟随系统")), ("zh", "中文"),
+                             ("en", "English")):
+            item = Gtk.CheckButton(label=label)
+            item.set_active(value == LANGUAGE_CHOICE)
+            if group is None:
+                group = item
+            else:
+                item.set_group(group)
+            item.connect("toggled", self._on_language, value)
+            box.append(item)
+        pop = Gtk.Popover()
+        pop.set_child(box)
+        self._lang_pop = pop
+        btn.set_popover(pop)
+        return btn
+
+    def _on_language(self, item, want):
+        if not item.get_active():
+            return
+        self._lang_pop.popdown()
+        d = load_ui()
+        if want == "auto":
+            d.pop("lang", None)
+        else:
+            d["lang"] = want
+        save_ui(d)
+        effective = want if want in ("zh", "en") else _system_language()
+        if effective != LANGUAGE:
+            self._relaunch()
+
+    def _relaunch(self):
+        """Start a fresh panel once this process is gone.
+
+        The strings are translated while the UI is being built, so a language
+        change needs a new process -- but the app is single-instance, so the
+        replacement has to wait until this one exits (otherwise it just
+        activates the old instance and dies).
+        """
+        script = ("while kill -0 %d 2>/dev/null; do sleep 0.2; done; "
+                  "exec %s %s" % (os.getpid(), shlex.quote(sys.executable),
+                                  shlex.quote(os.path.abspath(__file__))))
+        try:
+            subprocess.Popen(["/bin/sh", "-c", script], start_new_session=True)
+        except Exception:
+            pass
+        self.get_application().quit()
+
+    def _on_metric_toggled(self, btn, key):
+        if btn.get_active() and key not in self.chart.selected:
+            # keep METRICS order so the Y axes never jump around
+            self.chart.selected = [k for k in METRIC_KEYS
+                                   if k in self.chart.selected or k == key]
+        elif not btn.get_active() and key in self.chart.selected:
+            self.chart.selected.remove(key)
+        self.chart.queue_draw()
+        self._save_ui()
+
+    def _on_window_changed(self, row, _param):
+        idx = row.get_selected()
+        if 0 <= idx < len(WINDOWS):
+            self.chart.window_secs = WINDOWS[idx][1]
+            self.chart.queue_draw()
+            self._save_ui()
+
+    # ---- daemon/battery -> UI ----
+    def refresh(self):
+        s = read_state()
+        self._loading = True
+        if s:
+            if self._pending is not None:
+                p = self._pending
+                confirmed = (
+                    bool(p["limit_enabled"]) == bool(s.get("limit_enabled"))
+                    and p["upper"] == s.get("upper")
+                    and p["lower"] == s.get("lower")
+                    and p["current_limit"] == s.get("current_limit")
+                    and bool(p["inhibit_sleep"]) == bool(s.get("inhibit_sleep")))
+                if confirmed or (time.monotonic() - self._pending_at) > PENDING_TTL:
+                    self._pending = None
+            if self._pending is None:
+                self.row_enable.set_active(bool(s.get("limit_enabled", True)))
+                self.row_upper.set_value(s.get("upper", 70))
+                self.row_lower.set_value(s.get("lower", 68))
+                self.row_inhibit.set_active(bool(s.get("inhibit_sleep", True)))
+                lim = s.get("current_limit")
+                if lim:
+                    self.spin_limit.set_value(int(lim))
+            self.row_enable.set_sensitive(True)
+            en = self.row_enable.get_active()
+            self.row_upper.set_sensitive(en)
+            self.row_lower.set_sensitive(en)
+            self.row_inhibit.set_sensitive(True)
+            self.spin_limit.set_sensitive(True)
+        else:
+            for r in (self.row_enable, self.row_upper,
+                      self.row_lower, self.row_inhibit):
+                r.set_sensitive(False)
+            self.spin_limit.set_sensitive(False)
+        self._loading = False
+
+        # keep the status columns proportional to the real width
+        w = min(self.get_width(), self._screen_width() or self.get_width())
+        if w != self._last_w:
+            self._last_w = w
+            self._apply_col_widths()
+
+        # live battery metrics straight from sysfs
+        cap = read_int(os.path.join(BAT, "capacity"))
+        raw_v = read_int(os.path.join(BAT, "voltage_now"))
+        raw_i = read_int(os.path.join(BAT, "current_now"))
+        raw_t = read_int(os.path.join(BAT, "temp"))
+        st = read_str(os.path.join(BAT, "status"))
+        online = read_int(os.path.join(CHG, "online"))
+
+        self.f["capacity"].set_text(f"{cap}%" if cap is not None else "—")
+        charging = (st == "Charging")
+        self.f["status"].set_text(_("充电中") if charging else _("未充电"))
+        set_charge_class(self.f["status"], charging)
+
+        plugged = (online == 1) or bool(s and s.get("plugged"))
+        self.f["plugged"].set_text(_("已连接") if plugged else _("未连接"))
+        set_charge_class(self.f["plugged"], plugged)
+
+        v = raw_v / 1e6 if raw_v is not None else None
+        i = raw_i / 1e6 if raw_i is not None else None
+        t = raw_t / 10.0 if raw_t is not None else None
+        self.f["voltage_v"].set_text(f"{v:.3f}" if v is not None else "—")
+        self.f["power_w"].set_text(
+            f"{v * i:+.2f}" if (v is not None and i is not None) else "—")
+        self.f["temp_c"].set_text(f"{t:.1f}" if t is not None else "—")
+
+        # charger type: the driver falls back to Unknown whenever no input is
+        # attached, so remember the last real one and keep showing it while the
+        # input is held off
+        ut = read_usb_type()
+        if ut and ut != "Unknown":
+            self._usb_type = ut
+        elif plugged and self._usb_type:
+            ut = self._usb_type
+        self.f["usb_type"].set_text(USB_TYPE_ZH.get(ut, ut) if ut else "—")
+
+        # capacity: what it holds now / the design value, and the health
+        # percentage that follows from the two
+        full = read_int(os.path.join(BAT, "charge_full"))
+        design = read_int(os.path.join(BAT, "charge_full_design"))
+        self.f["charge_full"].set_text(
+            f"{full / 1000:.0f}/{design / 1000:.0f}"
+            if (full and design) else "—")
+        self.f["health"].set_text(
+            f"{full / design * 100:.0f}%" if (full and design) else "—")
+
+        # input current: the gauge's rated maximum (read-only).  It also caps
+        # the writable limit: the spin's upper bound follows it, so a larger
+        # number can neither be typed nor stepped to.
+        cc = read_int(os.path.join(BAT, "constant_charge_current_max"))
+        self.f["current_max"].set_text(f"{cc // 1000}" if cc else "—")
+        if cc:
+            mx = max(100, cc // 1000)
+            adj = self.spin_limit.get_adjustment()
+            if int(adj.get_upper()) != mx:
+                self._loading = True
+                adj.set_upper(mx)
+                if self.spin_limit.get_value() > mx:
+                    self.spin_limit.set_value(mx)
+                self._loading = False
+
+        # current: signed, track min/max (reset each time the app opens)
+        if raw_i is not None:
+            cur = raw_i / 1000.0
+            self.i_min = cur if self.i_min is None else min(self.i_min, cur)
+            self.i_max = cur if self.i_max is None else max(self.i_max, cur)
+            self.f["current_a"].set_text(f"{cur:+.0f}")
+            self.f["current_range"].set_text(
+                f"{self.i_min:.0f} | {self.i_max:.0f}")
+        else:
+            self.f["current_a"].set_text("—")
+            self.f["current_range"].set_text("—")
+
+        # the 电流 row's left half is sized from that live text
+        if self._cur_cells is not None:
+            self._apply_col_widths()
+
+        # feed the chart one sample per refresh, then let it redraw.
+        # power is plotted as a magnitude: it tracks the current's shape almost
+        # exactly (P = V·I, V nearly constant), so keeping its sign on top of
+        # the current's would just make the two curves overlap.
+        self.chart.add_sample({
+            "voltage_v": v,
+            "current_mA": raw_i / 1000.0 if raw_i is not None else None,
+            "power_w": abs(v * i) if (v is not None and i is not None) else None,
+            "temp_c": t,
+            "capacity": float(cap) if cap is not None else None,
+        })
+        self.chart.queue_draw()
+        return True
+
+
+class App(Adw.Application):
+    def __init__(self):
+        super().__init__(application_id="org.postmarketos.Chargecap", flags=0)
+
+    def do_activate(self):
+        win = self.props.active_window
+        if not win:
+            win = Window(self)
+        win.present()
+
+
+if __name__ == "__main__":
+    App().run(None)
