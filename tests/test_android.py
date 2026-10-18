@@ -747,6 +747,8 @@ class CiTest(SourceTest):
         self.assertHas(self.workflow, "assembleDebug")
         self.assertHas(self.workflow, 'tags: ["v*"]')
         self.assertHas(self.workflow, "actions/upload-artifact@v4")
+        # v3 is broken by a tools package the runner images removed
+        self.assertHas(self.workflow, "android-actions/setup-android@v4")
         self.assertHas(self.workflow, "startsWith(github.ref, 'refs/tags/')")
         self.assertHas(self.workflow, "gh release create")
         # attaching an asset needs the token to be allowed to write
@@ -780,7 +782,8 @@ class CiTest(SourceTest):
         """Two copies install over each other only when the same key signed
         both, so the fingerprint belongs in the release."""
         # an APK is not a signed jar: the certificate comes from apksigner
-        self.assertHas(self.workflow, "apksigner verify --print-certs")
+        self.assertHas(self.workflow, "build-tools/*/apksigner")
+        self.assertHas(self.workflow, "verify --print-certs")
         self.assertHas(self.workflow, "Signer #1 certificate SHA-256 digest")
         self.assertLacks(self.workflow, "keytool -printcert")
         self.assertHas(read(ANDROID, "RELEASE-NOTES.md"), "debug key")
@@ -807,7 +810,8 @@ class CiTest(SourceTest):
         self.assertTrue(os.path.exists(os.path.join(
             ANDROID, "app", "proguard-rules.pro")))
         # CI refuses to ship a build signed by something else
-        self.assertHas(self.workflow, "apksigner verify --print-certs")
+        self.assertHas(self.workflow, "build-tools/*/apksigner")
+        self.assertHas(self.workflow, "verify --print-certs")
         self.assertHas(self.workflow, "the APK was not signed by android/keystore")
 
     def test_the_release_drops_the_variant_from_its_name(self):

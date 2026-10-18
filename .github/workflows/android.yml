@@ -33,7 +33,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
 
       - uses: gradle/actions/setup-gradle@v4
 
@@ -101,7 +101,8 @@ jobs:
 
           # an APK is not a signed jar, so ask apksigner; and check it is *our*
           # key that signed it, not whatever keystore a machine happened to have
-          certs=$(apksigner verify --print-certs "$APK")
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)
+          certs=$("$apksigner" verify --print-certs "$APK")
           actual=$(echo "$certs" |
                    sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
           expected=$(keytool -list -v -keystore android/keystore/chargecap-release.p12 \
@@ -153,7 +154,14 @@ jobs:
             echo
             cat "chargecap-${VERSION}-build-info.txt"
           } > release-notes.md
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "chargecap ${GITHUB_REF_NAME}" \
-            --notes-file release-notes.md \
-            "$APK" SHA256SUMS "chargecap-${VERSION}-build-info.txt"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" \
+              "$APK" SHA256SUMS "chargecap-${VERSION}-build-info.txt" --clobber
+            gh release edit "${GITHUB_REF_NAME}" \
+              --title "chargecap ${GITHUB_REF_NAME}" --notes-file release-notes.md
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --title "chargecap ${GITHUB_REF_NAME}" \
+              --notes-file release-notes.md \
+              "$APK" SHA256SUMS "chargecap-${VERSION}-build-info.txt"
+          fi
