@@ -83,7 +83,7 @@ class TranslationTest(unittest.TestCase):
         languages = {"zh", "en"}
         self.assertEqual(set(self.scale), languages)
         keys = {"title", "key", "small", "value", "sub", "spin", "btn",
-                "btnpad", "big"}
+                "btnpad", "big", "heading"}
         for lang, entry in self.scale.items():
             self.assertEqual(set(entry), keys, f"{lang} scale is incomplete")
             for k, v in entry.items():

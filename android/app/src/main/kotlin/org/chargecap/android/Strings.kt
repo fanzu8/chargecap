@@ -144,15 +144,21 @@ fun tr(text: String): String = Strings.tr(text)
 data class Scale(
     val title: Float, val key: Float, val small: Float, val value: Float,
     val sub: Float, val spin: Float, val btn: Float,
-    /** 限制充电 / 禁止休眠, and the 电源 row's own values: a size up. */
+    /** 限制充电 / 禁止休眠 and the 电源 row's own values: a size up. */
     val big: Float,
+    /**
+     * The two switch titles.  A step above `big` in English, where the 电源 row
+     * has no room for it (five things on one phone-screen-wide row) but the
+     * switch rows have plenty.
+     */
+    val heading: Float,
 )
 
 val SCALE = mapOf(
     "zh" to Scale(title = 11f, key = 11f, small = 11f, value = 11f,
-                  sub = 11f, spin = 11f, btn = 28f, big = 13f),
+                  sub = 11f, spin = 11f, btn = 28f, big = 13f, heading = 13f),
     "en" to Scale(title = 10f, key = 10f, small = 10f, value = 10f,
-                  sub = 10f, spin = 10f, btn = 26f, big = 11f),
+                  sub = 10f, spin = 10f, btn = 26f, big = 11f, heading = 13f),
 )
 
 fun scale(): Scale = SCALE[Strings.effective.tag] ?: SCALE.getValue("en")

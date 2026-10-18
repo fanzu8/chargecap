@@ -220,7 +220,8 @@ class StringsTest(SourceTest):
         (the same SCALE numbers the GTK app uses, now in sp)."""
         scale = gui_constant("SCALE")
         src = kotlin("Strings.kt")
-        for key in ("title", "key", "small", "value", "sub", "spin", "big"):
+        for key in ("title", "key", "small", "value", "sub", "spin", "big",
+                    "heading"):
             for lang in ("zh", "en"):
                 with self.subTest(lang=lang, key=key):
                     self.assertHas(src, f"{key} = {scale[lang][key]:g}f")
@@ -340,6 +341,8 @@ class ChartTest(SourceTest):
         self.assertEqual(status.count("bold = true"), 2, "plugged and charging")
         self.assertHas(panel, "fontWeight = if (bold) FontWeight.Bold")
         gtk = read(ROOT, "chargecap")
+        self.assertHas(gtk, "row.switch-row.compact-status label.title {")
+        self.assertHas(gtk, "label.sample-value { font-weight: 400; }")
         self.assertHas(gtk, "def _capacity_row(self):")
         self.assertHas(gtk, 'box.append(key_label(_("健康度")))')
         self.assertHas(gtk, 'self.f["charge_full"] = full')
@@ -352,9 +355,11 @@ class ChartTest(SourceTest):
         with a shadow -- and a shade lighter, because a black shadow is
         invisible on a dark panel."""
         panel = kotlin("Panel.kt")
-        self.assertHas(panel, 'KeyChip(tr("采样间隔"), null, sc.value)')
+        self.assertHas(panel, 'KeyChip(tr("采样间隔"), null, sc.value, raised = true)')
         self.assertHas(panel, "raised = true,")
         self.assertHas(panel, "shadow: Dp = 0.dp,")
+        self.assertHas(panel, "raised: Boolean = false,")
+        self.assertHas(panel, "KeyChip(title, null, s.heading)")
         self.assertHas(panel, "alpha = if (raised) 0.16f else 0.10f")
         self.assertHas(panel, ".shadow(shadow, shape)")
         # the GTK app's interval is a compact chip carrying the same chevron

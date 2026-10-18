@@ -129,7 +129,12 @@ private fun RowDivider() {
 
 /** An inline key: bold, dimmer than its value, with a flat chip behind it. */
 @Composable
-private fun KeyChip(text: String, color: Color? = null, size: Float = scale().key) {
+private fun KeyChip(
+    text: String,
+    color: Color? = null,
+    size: Float = scale().key,
+    raised: Boolean = false,
+) {
     Text(
         text,
         color = color ?: MaterialTheme.colorScheme.onSurface,
@@ -138,8 +143,10 @@ private fun KeyChip(text: String, color: Color? = null, size: Float = scale().ke
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
+            .shadow(if (raised) 2.dp else 0.dp, RoundedCornerShape(8.dp))
             .background(
-                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+                MaterialTheme.colorScheme.onSurface.copy(
+                    alpha = if (raised) 0.16f else 0.10f),
                 RoundedCornerShape(8.dp),
             )
             .padding(horizontal = 6.dp, vertical = 1.dp),
@@ -336,7 +343,7 @@ fun StatusSection(s: Snapshot, sampleMs: Int, onSample: (Int) -> Unit) {
             Spacer(Modifier.weight(1f))
             // the same inline key as 温度(°C) or 极值: bold, on its own chip,
             // at full strength -- a bare dim label read as grey next to them
-            KeyChip(tr("采样间隔"), null, sc.value)
+            KeyChip(tr("采样间隔"), null, sc.value, raised = true)
             Spacer(Modifier.width(4.dp))
             ChipPicker(
                 label = sampleLabel(sampleMs),
@@ -474,12 +481,7 @@ private fun SwitchRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                fontSize = s.big.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
-            )
+            KeyChip(title, null, s.heading)
             Text(
                 subtitle,
                 fontSize = s.small.sp,
