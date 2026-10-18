@@ -95,12 +95,22 @@ sudo ./uninstall.sh        # 全部清掉，并把充电器恢复成"允许 + �
 标准库 Python，没有 pip 依赖；测试不需要手机、不需要 GTK，也不需要 Android SDK：
 
 ```sh
-python3 -m unittest        # 113 个用例
+python3 -m unittest        # 124 个用例
 ```
 
 测试用假 sysfs 驱动真实控制循环、读界面源码校验各表与布局不变量、检查打包契约，
 并把 Android 版和 GTK 版钉在一起 —— 指标、窗口、刻度格式、译文两边必须一致
 （`tests/test_android.py`）。CI 在 Python 3.10–3.13 上跑。
+
+不用手机也想看 GTK 界面时，`tools/gtk-preview.py` 会把它指到一棵假 sysfs 树和一份
+假守护进程状态上，整个面板就按真机的数值画出来；`--shot` 还能直接渲染成 PNG。
+需要 GTK4 + libadwaita + PyGObject（Mac 上 `brew install gtk4 libadwaita pygobject3`）：
+
+```sh
+python3 tools/gtk-preview.py                  # 插着电的面板
+python3 tools/gtk-preview.py --off            # 没插电、放电中
+python3 tools/gtk-preview.py --scheme light --shot panel.png
+```
 
 ## 许可
 

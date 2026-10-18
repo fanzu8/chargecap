@@ -48,14 +48,14 @@ ANDROID_ONLY = {
     "健康度是系统上报的电池状态，不是磨损百分比：\n",
     "磨损要算 充满容量/设计容量，而 Android 不发布 充满容量",
     # 禁止休眠 is a wake lock here, not a logind sleep block
-    "持有唤醒锁：熄屏也不休眠，网络保持在线",
+    "系统不休眠，保持网络在线",
     # Android reports the port it is plugged into, not SDP / DCP / CDP
     "无线",
     "AC：充电头\n",
     "USB：电脑或充电宝的 USB 口\n",
     "无线：无线充电板\n",
     # the controls need root, and the health comes as a state, not a percentage
-    "本机没有 root：只能监控，充电限制不可用",
+    "未 root：只有状态",
     "需要 root",
     "健康度",
     "良好",
@@ -347,8 +347,7 @@ class CapabilityTest(SourceTest):
         # the switch and both steppers are inert, not merely unlabelled
         self.assertGreaterEqual(limits.count("enabled = false"), 3)
         self.assertHas(limits, 'tr("需要 root")', "LimitsSection")
-        self.assertHas(limits, 'tr("本机没有 root：只能监控，充电限制不可用")',
-                       "LimitsSection")
+        self.assertHas(limits, 'tr("未 root：只有状态")', "LimitsSection")
 
     def test_the_input_current_limit_is_not_writable(self):
         """`限制` is drawn as an empty, inert box: without root there is no
@@ -437,6 +436,33 @@ class PanelTest(SourceTest):
         status = re.search(r"fun StatusSection\(.*?\n\}", panel, re.S).group(0)
         self.assertGreaterEqual(status.count("RowDivider()"), 4)
 
+    def test_the_metric_row_and_the_window_picker_share_one_line(self):
+        """The GTK app puts the metric buttons and the window picker on one row
+        (buttons left, picker right, a spacer between) -- which is what lets the
+        whole panel, chart included, fit a phone screen without scrolling."""
+        chart = re.search(r"fun ChartSection\(.*?\n\}", kotlin("Panel.kt"), re.S).group(0)
+        body = chart[chart.index("Section(tr(\"指标\"))"):]
+        self.assertHas(body, "Row(verticalAlignment = Alignment.CenterVertically)")
+        self.assertHas(body, "Spacer(Modifier.weight(1f))")
+        self.assertLess(body.index("MetricButton("), body.index("WindowSelector("))
+        self.assertLess(body.index("WindowSelector("), body.index("LiveChart("))
+        # one row, not a wrapping FlowRow, and one line per label
+        self.assertLacks(body, "FlowRow")
+
+    def test_the_chip_buttons_are_exactly_their_content(self):
+        """Material's Surface(onClick) spends a 48dp minimum touch target on
+        every button -- 37px of empty padding each, which pushed the metric row
+        onto a second line on a 360dp screen."""
+        panel = kotlin("Panel.kt")
+        self.assertHas(panel, "private fun ChipButton(")
+        self.assertHas(panel, ".clip(shape)")
+        self.assertHas(panel, ".clickable(onClick = onClick)")
+        for user in ("MetricButton", "WindowSelector"):
+            body = re.search(r"private fun %s\(.*?\n\}" % user, panel, re.S).group(0)
+            with self.subTest(user=user):
+                self.assertHas(body, "ChipButton(", user)
+                self.assertLacks(body, "Surface(", user)
+
     def test_the_background_is_dark_by_default(self):
         theme = kotlin("Theme.kt")
         self.assertHas(theme, "enum class Theme")
@@ -460,7 +486,7 @@ class PanelTest(SourceTest):
         wear percentage from the gauge, and reads SDP / DCP / CDP.  None of that
         is true here, so the notes are the Android app's own."""
         panel = kotlin("Panel.kt")
-        self.assertHas(panel, 'tr("持有唤醒锁：熄屏也不休眠，网络保持在线")')
+        self.assertHas(panel, 'tr("系统不休眠，保持网络在线")')
         self.assertHas(panel, "HealthHelp()")
         self.assertHas(panel, r'tr("健康度是系统上报的电池状态，不是磨损百分比：\n")')
         # the GTK app's wording for the same rows is not reused

@@ -113,7 +113,7 @@ Stdlib Python, no pip dependencies; the tests need neither a phone nor GTK (nor,
 for the Android sources they also check, an Android SDK):
 
 ```sh
-python3 -m unittest        # 113 tests
+python3 -m unittest        # 124 tests
 ```
 
 They drive the real control loop against a fake sysfs tree, check the GUI's
@@ -121,6 +121,17 @@ tables and layout invariants from its source, check the packaging, and hold the
 Android port to the GTK app -- the same metrics, windows, tick formats and
 translations on both sides (`tests/test_android.py`).  CI runs them on Python
 3.10–3.13.
+
+To look at the GTK front end without a phone, `tools/gtk-preview.py` points it
+at a fake sysfs tree and a fake daemon state, so the whole panel draws with a
+device's numbers; `--shot` renders it straight to a PNG.  It needs GTK4 +
+libadwaita + PyGObject (`brew install gtk4 libadwaita pygobject3` on a Mac):
+
+```sh
+python3 tools/gtk-preview.py                  # the panel, plugged in
+python3 tools/gtk-preview.py --off            # discharging, nothing plugged in
+python3 tools/gtk-preview.py --scheme light --shot panel.png
+```
 
 ## License
 

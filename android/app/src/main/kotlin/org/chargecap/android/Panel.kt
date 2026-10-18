@@ -15,12 +15,10 @@ import android.os.BatteryManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -46,7 +44,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -83,7 +83,7 @@ private fun Section(
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(top = 12.dp),
+            .padding(top = 6.dp),
     ) {
         if (title != null) {
             Text(
@@ -102,7 +102,7 @@ private fun Section(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(
-                Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
                 content = content,
             )
         }
@@ -174,7 +174,7 @@ private fun StatusRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp),
+            .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(if (fitTitle) Modifier else Modifier.width(TITLE_W)) {
@@ -409,7 +409,7 @@ private fun SwitchRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp),
+            .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -478,13 +478,13 @@ private fun StepperRow(
 fun LimitsSection() {
     Section(tr("充电限制")) {
         Row(
-            Modifier.padding(vertical = 6.dp),
+            Modifier.padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             KeyChip(tr("需要 root"), AMBER, scale().small)
             Spacer(Modifier.width(6.dp))
             Text(
-                tr("本机没有 root：只能监控，充电限制不可用"),
+                tr("未 root：只有状态"),
                 fontSize = scale().small.sp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -506,7 +506,7 @@ fun LimitsSection() {
 @Composable
 fun SleepSection(inhibit: Boolean, onChange: (Boolean) -> Unit) {
     Section {
-        SwitchRow(tr("禁止休眠"), tr("持有唤醒锁：熄屏也不休眠，网络保持在线"),
+        SwitchRow(tr("禁止休眠"), tr("系统不休眠，保持网络在线"),
                   checked = inhibit, enabled = true, onChange = onChange)
     }
 }
@@ -514,11 +514,29 @@ fun SleepSection(inhibit: Boolean, onChange: (Boolean) -> Unit) {
 // ---- the chart controls -----------------------------------------------------
 
 @Composable
+private fun ChipButton(
+    onClick: () -> Unit,
+    color: Color,
+    shape: Shape = RoundedCornerShape(10.dp),
+    content: @Composable () -> Unit,
+) {
+    Box(
+        Modifier
+            .clip(shape)
+            .background(color)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 3.dp),
+    ) {
+        content()
+    }
+}
+
+@Composable
 private fun MetricButton(metric: Metric, on: Boolean, onClick: () -> Unit) {
-    Surface(
+    ChipButton(
         onClick = onClick,
-        shape = RoundedCornerShape(10.dp),
-        color = if (on) metric.color.copy(alpha = 0.30f) else Color.Transparent,
+        color = if (on) metric.color.copy(alpha = 0.30f)
+        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
     ) {
         Text(
             metricButtonLabel(metric),
@@ -526,7 +544,6 @@ private fun MetricButton(metric: Metric, on: Boolean, onClick: () -> Unit) {
             fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
             color = if (on) metricBright(metric.key)
             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.30f),
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
         )
     }
 }
@@ -536,8 +553,18 @@ private fun WindowSelector(windowSecs: Int, onWindow: (Int) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val label = WINDOWS.firstOrNull { it.second == windowSecs }?.first ?: "1min"
     Box {
-        TextButton(onClick = { open = true }) {
-            ValueText("$label ▾")
+        // content sized on purpose: a TextButton's minimum width and padding
+        // pushed the metric row onto a second line
+        ChipButton(
+            onClick = { open = true },
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+        ) {
+            Text(
+                "$label ▾",
+                fontSize = scale().value.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             for ((text, secs) in WINDOWS) {
@@ -553,7 +580,6 @@ private fun WindowSelector(windowSecs: Int, onWindow: (Int) -> Unit) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ChartSection(
     buffer: SampleBuffer,
@@ -564,24 +590,23 @@ fun ChartSection(
     seq: Long,
 ) {
     Section(tr("指标")) {
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             for (metric in METRICS) {
+                if (metric != METRICS.first()) Spacer(Modifier.width(4.dp))
                 MetricButton(metric, metric.key in selected) { onToggle(metric.key) }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    tr("窗口"),
-                    fontSize = scale().value.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                )
-                Spacer(Modifier.width(4.dp))
-                WindowSelector(windowSecs, onWindow)
-            }
+            // the slack goes between the two, exactly as the GTK app's spacer
+            // does, so the whole row stays one line wide
+            Spacer(Modifier.weight(1f))
+            Text(
+                tr("窗口"),
+                fontSize = scale().value.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            )
+            Spacer(Modifier.width(4.dp))
+            WindowSelector(windowSecs, onWindow)
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(3.dp))
         LiveChart(
             buffer = buffer,
             selected = selected,
@@ -591,6 +616,6 @@ fun ChartSection(
                 .fillMaxWidth()
                 .height(CHART_HEIGHT),
         )
-    Spacer(Modifier.height(6.dp))
+    Spacer(Modifier.height(4.dp))
     }
 }

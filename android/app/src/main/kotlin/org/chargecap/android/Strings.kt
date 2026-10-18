@@ -44,8 +44,7 @@ private val EN = mapOf(
     "禁止休眠" to "Inhibit sleep",
     // Android's equivalent is a wake lock, not logind's sleep block, so the
     // note says what it really does here
-    "持有唤醒锁：熄屏也不休眠，网络保持在线" to
-        "Holds a wake lock: no sleep, the network stays up",
+    "系统不休眠，保持网络在线" to "No sleep, the network stays up",
     "指标" to "Metrics",
     "窗口" to "Window",
     // status table
@@ -98,8 +97,7 @@ private val EN = mapOf(
     "跟随系统" to "Follow system",
     // root-only controls (the GTK app talks to a root daemon; Android has no
     // way to write the charger's sysfs without one)
-    "本机没有 root：只能监控，充电限制不可用" to
-        "No root on this device: monitoring only, charging cannot be limited",
+    "未 root：只有状态" to "No root: monitoring only",
     "需要 root" to "needs root",
     "健康度" to "Health",
     "健康度说明" to "About health",
