@@ -96,6 +96,10 @@ EN = {
     "电电": "chargecap",
     # the language switch in the header
     "语言": "Language",
+    # the background switch, left of it
+    "背景": "Background",
+    "暗色": "Dark",
+    "亮色": "Light",
     "跟随系统": "Follow system",
 }
 
@@ -130,6 +134,56 @@ def _stored_language():
 LANGUAGE = _stored_language() or _system_language()
 # what the language menu shows as selected ("auto" = follow the system)
 LANGUAGE_CHOICE = _stored_language() or "auto"
+
+
+# ---- background --------------------------------------------------------------
+# Dark unless the user picks otherwise: this panel is watched for hours at a
+# time, and the Android port of it opens dark as well.
+SCHEMES = ("dark", "light", "auto")
+
+
+def _stored_scheme():
+    """The background chosen by hand; dark when nothing was chosen yet.
+
+    Read at import time like the language, because the button's own label is
+    built while the UI is being built.
+    """
+    try:
+        with open(UI_FILE) as f:
+            want = (json.load(f) or {}).get("scheme")
+    except Exception:
+        want = None
+    return want if want in SCHEMES else "dark"
+
+
+SCHEME_CHOICE = _stored_scheme()
+
+# the background button's label: a couple of characters, like 中 / EN
+SCHEME_LABEL = {
+    "zh": {"dark": "暗", "light": "亮", "auto": "随"},
+    "en": {"dark": "Dark", "light": "Light", "auto": "Auto"},
+}
+
+
+def scheme_label():
+    table = SCHEME_LABEL.get(LANGUAGE, SCHEME_LABEL["en"])
+    return table.get(SCHEME_CHOICE, table["dark"])
+
+
+def apply_scheme(want):
+    """Tell libadwaita which background to draw.
+
+    Unlike the language this needs no restart: libadwaita redraws everything in
+    the new scheme by itself.
+    """
+    scheme = {"dark": Adw.ColorScheme.FORCE_DARK,
+              "light": Adw.ColorScheme.FORCE_LIGHT,
+              "auto": Adw.ColorScheme.DEFAULT}.get(
+                  want, Adw.ColorScheme.FORCE_DARK)
+    try:
+        Adw.StyleManager.get_default().set_color_scheme(scheme)
+    except Exception:
+        pass
 
 
 def _(text):
@@ -762,6 +816,9 @@ class Window(Adw.ApplicationWindow):
         tv = Adw.ToolbarView()
         header = Adw.HeaderBar()
         header.pack_end(self._language_button())
+        # pack_end puts each button left of the last one, so the background
+        # switch ends up before the language one, as in the Android app
+        header.pack_end(self._background_button())
         tv.add_top_bar(header)
         page = Adw.PreferencesPage()
         tv.set_content(page)
@@ -1294,6 +1351,47 @@ class Window(Adw.ApplicationWindow):
                   "window": self.chart.window_secs})
         save_ui(d)
 
+    def _background_button(self):
+        """The background switch: the scheme in a couple of characters.
+
+        Dark is the default; the other two are a lighter panel and the system's
+        own choice.  Unlike the language this applies at once -- libadwaita
+        redraws by itself -- so it only writes the choice down.
+        """
+        btn = Gtk.MenuButton()
+        btn.add_css_class("flat")
+        btn.add_css_class("lang-btn")
+        self._bg_label = Gtk.Label(label=scheme_label())
+        btn.set_child(self._bg_label)
+        btn.set_tooltip_text(_("背景"))
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        group = None
+        for value, label in (("dark", _("暗色")), ("light", _("亮色")),
+                             ("auto", _("跟随系统"))):
+            item = Gtk.CheckButton(label=label)
+            item.set_active(value == SCHEME_CHOICE)
+            if group is None:
+                group = item
+            else:
+                item.set_group(group)
+            item.connect("toggled", self._on_background, value)
+            box.append(item)
+        pop = Gtk.Popover()
+        pop.set_child(box)
+        self._bg_pop = pop
+        btn.set_popover(pop)
+        return btn
+
+    def _on_background(self, item, want):
+        if not item.get_active() or want not in SCHEMES:
+            return
+        self._bg_pop.popdown()
+        d = load_ui()
+        d["scheme"] = want
+        save_ui(d)
+        apply_scheme(want)
+
     # ---- language ----
     def _language_button(self):
         """The language switch: a couple of characters, in the header bar.
@@ -1511,6 +1609,9 @@ class Window(Adw.ApplicationWindow):
 class App(Adw.Application):
     def __init__(self):
         super().__init__(application_id="org.postmarketos.Chargecap", flags=0)
+        # the background is chosen before the window is built, so the panel
+        # opens in it instead of flashing the other scheme first
+        apply_scheme(SCHEME_CHOICE)
 
     def do_activate(self):
         win = self.props.active_window

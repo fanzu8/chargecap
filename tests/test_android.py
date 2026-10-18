@@ -37,16 +37,24 @@ SOURCES = ("Strings.kt", "Battery.kt", "Chart.kt", "Panel.kt",
 # battery's health instead of charge_full, and the controls that need root say
 # so.
 ANDROID_ONLY = {
+    # the gauge's counter, and the two ⓘ that explain what the rows hold
     "电量计/设计容量(mAh)",
     "电量计说明",
     "电量计累计流过的电荷，不是剩余电量：\n",
     "· 与上面的电量百分比无关\n",
     "· 部分机型（本机就是）满电时会复位\n",
     "· 方向与量纲都可能不准；可靠的是它的变化速度，也就是电流",
+    "健康度说明",
+    "健康度是系统上报的电池状态，不是磨损百分比：\n",
+    "磨损要算 充满容量/设计容量，而 Android 不发布 充满容量",
+    # 禁止休眠 is a wake lock here, not a logind sleep block
+    "持有唤醒锁：熄屏也不休眠，网络保持在线",
+    # Android reports the port it is plugged into, not SDP / DCP / CDP
     "无线",
     "AC：充电头\n",
     "USB：电脑或充电宝的 USB 口\n",
     "无线：无线充电板\n",
+    # the controls need root, and the health comes as a state, not a percentage
     "本机没有 root：只能监控，充电限制不可用",
     "需要 root",
     "健康度",
@@ -62,7 +70,8 @@ ANDROID_ONLY = {
 # follow, so both panels keep reading the same way
 SHARED = (
     "充电限制", "启动", "开启后：达到上限停止充电，降到下限恢复", "上限", "下限",
-    "禁止休眠", "系统可能挂起，开启可保持网络在线", "指标", "窗口",
+    "禁止休眠", "指标", "窗口",
+    "背景", "语言", "暗色", "亮色", "跟随系统",
     "电源", "USB类型", "电压(V)", "功率(W)", "电流", "温度(°C)",
     "极值", "最大", "限制", "已连接", "未连接", "充电中", "未充电", "未知",
     "现在", "选择上方指标以显示曲线", "USB 类型说明",
@@ -406,6 +415,58 @@ class CapabilityTest(SourceTest):
         # carries the explanation next to it
         self.assertHas(panel, "GaugeHelp()")
         self.assertHas(kotlin("Strings.kt"), "电量计累计流过的电荷，不是剩余电量：")
+
+
+class PanelTest(SourceTest):
+    """The panel's shape: boxed sections, a dark default, and hints that talk
+    about this platform rather than about Linux."""
+
+    def test_the_sections_are_boxed_like_the_gtk_apps_groups(self):
+        panel = kotlin("Panel.kt")
+        self.assertHas(panel, "private fun Section(")
+        self.assertHas(panel, "surfaceContainerHigh")
+        self.assertHas(panel, "private fun RowDivider()")
+        self.assertHas(panel, "HorizontalDivider(")
+        # every part of the panel is one of those boxes
+        for section in ("LimitsSection", "SleepSection", "StatusSection",
+                        "ChartSection"):
+            body = re.search(r"fun %s\(.*?\n\}" % section, panel, re.S).group(0)
+            with self.subTest(section=section):
+                self.assertHas(body, "Section(", section)
+        # ... and the status table separates its rows the way Adw does
+        status = re.search(r"fun StatusSection\(.*?\n\}", panel, re.S).group(0)
+        self.assertGreaterEqual(status.count("RowDivider()"), 4)
+
+    def test_the_background_is_dark_by_default(self):
+        theme = kotlin("Theme.kt")
+        self.assertHas(theme, "enum class Theme")
+        self.assertHas(theme, "DARK(\"dark\"), LIGHT(\"light\"), AUTO(\"auto\")")
+        self.assertHas(theme, "entries.firstOrNull { it.tag == tag } ?: DARK")
+        self.assertHas(kotlin("Prefs.kt"), "Theme.of(store.getString(\"theme\", null))")
+        # the scheme is applied by the theme, not by the system's
+        self.assertHas(kotlin("MainActivity.kt"), "AppTheme(theme = theme)")
+
+    def test_the_background_button_sits_left_of_the_language_one(self):
+        """Compose lays a Row out left to right, so the background has to come
+        first in the header's actions."""
+        app = kotlin("MainActivity.kt")
+        actions = app[app.index("actions = {"):]
+        actions = actions[:actions.index("},", actions.index("LanguageButton"))]
+        self.assertLess(actions.index("BackgroundButton(theme)"),
+                        actions.index("LanguageButton(lang)"))
+
+    def test_the_hints_describe_this_platform(self):
+        """The GTK app holds a logind sleep block in a systemd world, computes a
+        wear percentage from the gauge, and reads SDP / DCP / CDP.  None of that
+        is true here, so the notes are the Android app's own."""
+        panel = kotlin("Panel.kt")
+        self.assertHas(panel, 'tr("持有唤醒锁：熄屏也不休眠，网络保持在线")')
+        self.assertHas(panel, "HealthHelp()")
+        self.assertHas(panel, r'tr("健康度是系统上报的电池状态，不是磨损百分比：\n")')
+        # the GTK app's wording for the same rows is not reused
+        gtk = gui_constant("EN")
+        self.assertHas(gtk, "系统可能挂起，开启可保持网络在线")
+        self.assertLacks(all_kotlin(), "系统可能挂起，开启可保持网络在线")
 
 
 class ProjectTest(SourceTest):

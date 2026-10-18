@@ -12,11 +12,13 @@
 package org.chargecap.android
 
 import android.os.BatteryManager
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -31,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -64,14 +67,54 @@ private val GREEN = Color(0xFF2EC27E)    // ... and its "on" colour
 /** The plot's height, the GTK app's 139px ("+15px, as asked") in dp. */
 val CHART_HEIGHT: Dp = 139.dp
 
+/**
+ * One group of rows, boxed like the GTK app's Adw.PreferencesGroup.
+ *
+ * The GTK app's page is a stack of boxes: a title, then a card holding the
+ * rows with a hairline between them.  Without the boxes the whole panel reads
+ * as one block and nothing says where a section starts -- which is exactly how
+ * this looked before, so the boxes are the point.
+ */
 @Composable
-fun SectionTitle(text: String) {
-    Text(
-        text,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(top = 14.dp, bottom = 2.dp),
+private fun Section(
+    title: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp),
+    ) {
+        if (title != null) {
+            Text(
+                title,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
+            )
+        }
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            border = BorderStroke(1.dp,
+                                  MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                content = content,
+            )
+        }
+    }
+}
+
+/** The hairline Adw draws between the rows of a group. */
+@Composable
+private fun RowDivider() {
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+        thickness = 1.dp,
     )
 }
 
@@ -201,6 +244,15 @@ private fun GaugeHelp() {
     )
 }
 
+@Composable
+private fun HealthHelp() {
+    InfoButton(
+        tr("健康度说明"),
+        tr("健康度是系统上报的电池状态，不是磨损百分比：\n") +
+            tr("磨损要算 充满容量/设计容量，而 Android 不发布 充满容量"),
+    )
+}
+
 /** BatteryManager's health states, which the GTK app computes from capacities. */
 private fun healthLabel(health: Int): String? = when (health) {
     BatteryManager.BATTERY_HEALTH_GOOD -> tr("良好")
@@ -219,115 +271,123 @@ fun StatusSection(s: Snapshot) {
     val sc = scale()
     val red = METRIC_INFO.getValue("current_mA").color
 
-    // 电源: three bare values, no keys
-    StatusRow(tr("电源")) {
-        ChargedValue(if (s.plugged) tr("已连接") else tr("未连接"), s.plugged,
-                     Modifier.weight(1f))
-        ChargedValue(if (s.charging) tr("充电中") else tr("未充电"), s.charging,
-                     Modifier.weight(1f))
-        ValueText(s.capacity?.let { "$it%" } ?: "—", modifier = Modifier.weight(1f))
-    }
+    Section {
+        // 电源: three bare values, no keys
+        StatusRow(tr("电源")) {
+            ChargedValue(if (s.plugged) tr("已连接") else tr("未连接"), s.plugged,
+                         Modifier.weight(1f))
+            ChargedValue(if (s.charging) tr("充电中") else tr("未充电"), s.charging,
+                         Modifier.weight(1f))
+            ValueText(s.capacity?.let { "$it%" } ?: "—", modifier = Modifier.weight(1f))
+        }
+        RowDivider()
 
-    // USB 类型 with a help button, then 温度 on the same row
-    StatusRow(tr("USB类型")) {
-        val type = plugTypeLabel(s.plugType)
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+        // USB 类型 with a help button, then 温度 on the same row
+        StatusRow(tr("USB类型")) {
+            val type = plugTypeLabel(s.plugType)
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                ValueText(
+                    when {
+                        !s.plugged -> "—"
+                        type == null -> tr("未知")
+                        else -> type
+                    },
+                )
+                Spacer(Modifier.width(4.dp))
+                UsbHelp()
+            }
+            KeyChip(tr("温度(°C)"), METRIC_INFO.getValue("temp_c").color, sc.key)
+            Spacer(Modifier.width(6.dp))
+            ValueText(
+                s.tempC?.let { fmt("%.1f", it) } ?: "—",
+                METRIC_INFO.getValue("temp_c").color,
+                Modifier.weight(1f),
+            )
+        }
+        RowDivider()
+
+        StatusRow(tr("电压(V)"), titleColor = METRIC_INFO.getValue("voltage_v").color) {
+            ValueText(
+                s.voltageV?.let { fmt("%.3f", it) } ?: "—",
+                METRIC_INFO.getValue("voltage_v").color,
+                Modifier.weight(1f),
+            )
+            KeyChip(tr("功率(W)"), METRIC_INFO.getValue("power_w").color, sc.key)
+            Spacer(Modifier.width(6.dp))
+            ValueText(
+                s.powerW?.let { fmt("%+.2f", it) } ?: "—",
+                METRIC_INFO.getValue("power_w").color,
+                Modifier.weight(2f),
+            )
+        }
+        RowDivider()
+
+        // 电流: the reading and its extremes on the left, the rated maximum and the
+        // writable limit on the right, so the two halves read as one block.
+        StatusRow(tr("电流"), titleColor = red, unit = "(mA)", unitColor = red) {
+            Column(Modifier.weight(1f)) {
+                ValueText(s.currentA?.let { fmt("%+.0f", it * 1000) } ?: "—", red)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    KeyChip(tr("极值"), red, sc.small)
+                    Spacer(Modifier.width(4.dp))
+                    ValueText(
+                        if (s.currentMinMA != null && s.currentMaxMA != null)
+                            fmt("%.0f", s.currentMinMA) + " | " + fmt("%.0f", s.currentMaxMA)
+                        else "—",
+                        red,
+                        size = sc.small,
+                    )
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    KeyChip(tr("限制"), red, sc.small)
+                    Spacer(Modifier.width(4.dp))
+                    // the GTK app's spin button; without root there is nothing to
+                    // write it to, so it stays empty and inert
+                    Box(
+                        Modifier
+                            .width(38.dp)
+                            .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.20f),
+                                    RoundedCornerShape(6.dp))
+                            .padding(horizontal = 6.dp, vertical = 1.dp),
+                    ) {
+                        Text("—", color = red.copy(alpha = 0.5f), fontSize = sc.spin.sp)
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    KeyChip(tr("最大"), red, sc.small)
+                    Spacer(Modifier.width(4.dp))
+                    ValueText("—", red, size = sc.small)
+                }
+            }
+        }
+        RowDivider()
+
+        // last row: two mAh numbers and the battery's health.  The first one is the
+        // gauge's own coulomb counter -- all Android publishes, since there is no
+        // charge_full to make a wear percentage out of -- so it carries a ⓘ: on its
+        // own, "54/4000" invites exactly the wrong reading (see the help text).
+        StatusRow(tr("电量计/设计容量(mAh)"), fitTitle = true) {
+            val counter = s.chargeCounterUAh?.let { it / 1000 }
+            val design = s.designUAh?.let { it / 1000 }
             ValueText(
                 when {
-                    !s.plugged -> "—"
-                    type == null -> tr("未知")
-                    else -> type
+                    counter != null && design != null -> "$counter/$design"
+                    counter != null -> "$counter/—"
+                    design != null -> "—/$design"
+                    else -> "—"
                 },
             )
             Spacer(Modifier.width(4.dp))
-            UsbHelp()
-        }
-        KeyChip(tr("温度(°C)"), METRIC_INFO.getValue("temp_c").color, sc.key)
-        Spacer(Modifier.width(6.dp))
-        ValueText(
-            s.tempC?.let { fmt("%.1f", it) } ?: "—",
-            METRIC_INFO.getValue("temp_c").color,
-            Modifier.weight(1f),
-        )
+            GaugeHelp()
+            Spacer(Modifier.width(10.dp))
+            KeyChip(tr("健康度"), null, scale().small)
+            Spacer(Modifier.width(4.dp))
+            ValueText(healthLabel(s.health) ?: "—")
+            Spacer(Modifier.width(4.dp))
+        HealthHelp()
     }
-
-    StatusRow(tr("电压(V)"), titleColor = METRIC_INFO.getValue("voltage_v").color) {
-        ValueText(
-            s.voltageV?.let { fmt("%.3f", it) } ?: "—",
-            METRIC_INFO.getValue("voltage_v").color,
-            Modifier.weight(1f),
-        )
-        KeyChip(tr("功率(W)"), METRIC_INFO.getValue("power_w").color, sc.key)
-        Spacer(Modifier.width(6.dp))
-        ValueText(
-            s.powerW?.let { fmt("%+.2f", it) } ?: "—",
-            METRIC_INFO.getValue("power_w").color,
-            Modifier.weight(2f),
-        )
-    }
-
-    // 电流: the reading and its extremes on the left, the rated maximum and the
-    // writable limit on the right, so the two halves read as one block.
-    StatusRow(tr("电流"), titleColor = red, unit = "(mA)", unitColor = red) {
-        Column(Modifier.weight(1f)) {
-            ValueText(s.currentA?.let { fmt("%+.0f", it * 1000) } ?: "—", red)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                KeyChip(tr("极值"), red, sc.small)
-                Spacer(Modifier.width(4.dp))
-                ValueText(
-                    if (s.currentMinMA != null && s.currentMaxMA != null)
-                        fmt("%.0f", s.currentMinMA) + " | " + fmt("%.0f", s.currentMaxMA)
-                    else "—",
-                    red,
-                    size = sc.small,
-                )
-            }
-        }
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                KeyChip(tr("限制"), red, sc.small)
-                Spacer(Modifier.width(4.dp))
-                // the GTK app's spin button; without root there is nothing to
-                // write it to, so it stays empty and inert
-                Box(
-                    Modifier
-                        .width(38.dp)
-                        .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.20f),
-                                RoundedCornerShape(6.dp))
-                        .padding(horizontal = 6.dp, vertical = 1.dp),
-                ) {
-                    Text("—", color = red.copy(alpha = 0.5f), fontSize = sc.spin.sp)
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                KeyChip(tr("最大"), red, sc.small)
-                Spacer(Modifier.width(4.dp))
-                ValueText("—", red, size = sc.small)
-            }
-        }
-    }
-
-    // last row: two mAh numbers and the battery's health.  The first one is the
-    // gauge's own coulomb counter -- all Android publishes, since there is no
-    // charge_full to make a wear percentage out of -- so it carries a ⓘ: on its
-    // own, "54/4000" invites exactly the wrong reading (see the help text).
-    StatusRow(tr("电量计/设计容量(mAh)"), fitTitle = true) {
-        val counter = s.chargeCounterUAh?.let { it / 1000 }
-        val design = s.designUAh?.let { it / 1000 }
-        ValueText(
-            when {
-                counter != null && design != null -> "$counter/$design"
-                counter != null -> "$counter/—"
-                design != null -> "—/$design"
-                else -> "—"
-            },
-        )
-        Spacer(Modifier.width(4.dp))
-        GaugeHelp()
-        Spacer(Modifier.width(10.dp))
-        KeyChip(tr("健康度"), null, scale().small)
-        Spacer(Modifier.width(4.dp))
-        ValueText(healthLabel(s.health) ?: "—")
     }
 }
 
@@ -416,30 +476,39 @@ private fun StepperRow(
 
 @Composable
 fun LimitsSection() {
-    SectionTitle(tr("充电限制"))
-    Row(
-        Modifier.padding(bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        KeyChip(tr("需要 root"), AMBER, scale().small)
-        Spacer(Modifier.width(6.dp))
-        Text(
-            tr("本机没有 root：只能监控，充电限制不可用"),
-            fontSize = scale().small.sp,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-        )
+    Section(tr("充电限制")) {
+        Row(
+            Modifier.padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            KeyChip(tr("需要 root"), AMBER, scale().small)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                tr("本机没有 root：只能监控，充电限制不可用"),
+                fontSize = scale().small.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+        }
+        RowDivider()
+        SwitchRow(tr("启动"), tr("开启后：达到上限停止充电，降到下限恢复"),
+                  checked = false, enabled = false) {}
+        RowDivider()
+        StepperRow(tr("上限"), "70%", enabled = false) {}
+        RowDivider()
+        StepperRow(tr("下限"), "68%", enabled = false) {}
     }
-    SwitchRow(tr("启动"), tr("开启后：达到上限停止充电，降到下限恢复"),
-              checked = false, enabled = false) {}
-    StepperRow(tr("上限"), "70%", enabled = false) {}
-    StepperRow(tr("下限"), "68%", enabled = false) {}
 }
 
-/** 禁止休眠: a partial wake lock, which Android does allow without root. */
+/**
+ * 禁止休眠: a partial wake lock, which Android does allow without root -- its
+ * own box, untitled, like the GTK app's group with no title.
+ */
 @Composable
 fun SleepSection(inhibit: Boolean, onChange: (Boolean) -> Unit) {
-    SwitchRow(tr("禁止休眠"), tr("系统可能挂起，开启可保持网络在线"),
-              checked = inhibit, enabled = true, onChange = onChange)
+    Section {
+        SwitchRow(tr("禁止休眠"), tr("持有唤醒锁：熄屏也不休眠，网络保持在线"),
+                  checked = inhibit, enabled = true, onChange = onChange)
+    }
 }
 
 // ---- the chart controls -----------------------------------------------------
@@ -494,33 +563,34 @@ fun ChartSection(
     onWindow: (Int) -> Unit,
     seq: Long,
 ) {
-    SectionTitle(tr("指标"))
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        for (metric in METRICS) {
-            MetricButton(metric, metric.key in selected) { onToggle(metric.key) }
+    Section(tr("指标")) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            for (metric in METRICS) {
+                MetricButton(metric, metric.key in selected) { onToggle(metric.key) }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    tr("窗口"),
+                    fontSize = scale().value.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                )
+                Spacer(Modifier.width(4.dp))
+                WindowSelector(windowSecs, onWindow)
+            }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                tr("窗口"),
-                fontSize = scale().value.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-            )
-            Spacer(Modifier.width(4.dp))
-            WindowSelector(windowSecs, onWindow)
-        }
+        Spacer(Modifier.height(4.dp))
+        LiveChart(
+            buffer = buffer,
+            selected = selected,
+            windowSecs = windowSecs,
+            seq = seq,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(CHART_HEIGHT),
+        )
+    Spacer(Modifier.height(6.dp))
     }
-    Spacer(Modifier.height(4.dp))
-    LiveChart(
-        buffer = buffer,
-        selected = selected,
-        windowSecs = windowSecs,
-        seq = seq,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(CHART_HEIGHT),
-    )
-    Spacer(Modifier.height(16.dp))
 }

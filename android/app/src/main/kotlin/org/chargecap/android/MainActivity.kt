@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ChargecapApp(prefs: Prefs, inhibitor: SleepInhibitor) {
     var lang by remember { mutableStateOf(prefs.lang) }
+    var theme by remember { mutableStateOf(prefs.theme) }
     var selected by remember {
         mutableStateOf(prefs.metrics.ifEmpty { DEFAULT_METRICS })
     }
@@ -86,12 +88,17 @@ fun ChargecapApp(prefs: Prefs, inhibitor: SleepInhibitor) {
     var inhibit by remember { mutableStateOf(prefs.inhibitSleep) }
     val snapshot by Monitor.state.collectAsState()
 
-    AppTheme(darkTheme = isSystemInDarkTheme()) {
+    AppTheme(theme = theme) {
         Scaffold(
             topBar = {
                 TopAppBar(
                     title = { Text(tr("电电")) },
                     actions = {
+                        // the background sits before the language, as on pmOS
+                        BackgroundButton(theme) { picked ->
+                            theme = picked
+                            prefs.theme = picked
+                        }
                         LanguageButton(lang) { picked ->
                             lang = picked
                             Strings.lang = picked
@@ -115,7 +122,6 @@ fun ChargecapApp(prefs: Prefs, inhibitor: SleepInhibitor) {
                     prefs.inhibitSleep = on
                     if (on) inhibitor.acquire() else inhibitor.release()
                 }
-                Spacer(Modifier.height(10.dp))
 
                 StatusSection(snapshot)
 
@@ -141,6 +147,68 @@ fun ChargecapApp(prefs: Prefs, inhibitor: SleepInhibitor) {
 }
 
 /**
+ * The title of a header menu, so the popover says what it is choosing between
+ * (the ⓘ popovers have one too).
+ */
+@Composable
+private fun MenuTitle(text: String) {
+    Text(
+        text,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+        modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 2.dp),
+    )
+}
+
+/**
+ * The background switch: the scheme in a couple of characters, in the header
+ * bar, left of the language one.
+ *
+ * Dark is the default (the GTK app's too), so a fresh install opens dark and
+ * the button is there to go lighter, or to follow the system.
+ */
+@Composable
+private fun BackgroundButton(current: Theme, onPick: (Theme) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val zh = Strings.effective == Lang.ZH
+    Box {
+        TextButton(onClick = { open = true }) {
+            Text(
+                when (current) {
+                    Theme.DARK -> if (zh) "暗" else "Dark"
+                    Theme.LIGHT -> if (zh) "亮" else "Light"
+                    Theme.AUTO -> if (zh) "随" else "Auto"
+                },
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            MenuTitle(tr("背景"))
+            for ((value, label) in listOf(
+                Theme.DARK to tr("暗色"),
+                Theme.LIGHT to tr("亮色"),
+                Theme.AUTO to tr("跟随系统"),
+            )) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            (if (value == current) "✓ " else "   ") + label,
+                            fontSize = 13.sp,
+                        )
+                    },
+                    onClick = {
+                        open = false
+                        onPick(value)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
  * The language switch: a couple of characters, in the header bar.
  *
  * It picks between following the system and a language pushed by hand, exactly
@@ -159,6 +227,7 @@ private fun LanguageButton(current: Lang, onPick: (Lang) -> Unit) {
             )
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            MenuTitle(tr("语言"))
             for ((value, label) in listOf(
                 Lang.AUTO to tr("跟随系统"),
                 Lang.ZH to "中文",

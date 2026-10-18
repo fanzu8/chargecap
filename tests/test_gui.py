@@ -262,3 +262,50 @@ class SizeTest(unittest.TestCase):
         self.assertEqual(windows[0], ("30s", 30))
         self.assertEqual(windows[-1], ("48h", 172800))
         self.assertEqual(len(windows), 15)
+
+
+class HeaderTest(unittest.TestCase):
+    """The header's two switches: the background, then the language.
+
+    Dark is the default on both apps (the Android port opens dark too), and the
+    background has to sit left of the language switch -- `pack_end` puts each
+    button left of the one packed before it, which is easy to get backwards.
+    """
+
+    def setUp(self):
+        self.src = gui_source()
+
+    def test_the_background_is_dark_by_default(self):
+        self.assertEqual(gui_constant("SCHEMES"), ("dark", "light", "auto"))
+        self.assertIn('return want if want in SCHEMES else "dark"', self.src)
+        self.assertIn("Adw.ColorScheme.FORCE_DARK", self.src)
+        self.assertIn("Adw.StyleManager.get_default().set_color_scheme", self.src)
+        # ... and it is applied before the window is built, so nothing flashes
+        self.assertIn("apply_scheme(SCHEME_CHOICE)", self.src)
+
+    def test_the_background_button_sits_left_of_the_language_one(self):
+        pack = re.findall(r"header\.pack_end\(self\.(\w+)\(\)\)", self.src)
+        self.assertEqual(pack, ["_language_button", "_background_button"],
+                         "pack_end packs right to left")
+
+    def test_the_background_applies_without_a_restart(self):
+        """Only the strings need a new process; the scheme is live."""
+        body = self.src[self.src.index("def _on_background("):]
+        body = body[:body.index("\n    def ")]
+        self.assertIn("apply_scheme(want)", body)
+        self.assertNotIn("_relaunch", body)
+
+    def test_the_background_choice_is_written_down(self):
+        body = self.src[self.src.index("def _on_background("):]
+        body = body[:body.index("\n    def ")]
+        self.assertIn('d["scheme"] = want', body)
+        self.assertIn("save_ui(d)", body)
+
+    def test_the_button_shows_the_scheme_in_both_languages(self):
+        labels = gui_constant("SCHEME_LABEL")
+        self.assertEqual(set(labels), {"zh", "en"})
+        for lang in ("zh", "en"):
+            self.assertEqual(sorted(labels[lang]), ["auto", "dark", "light"])
+        # short enough for a header bar, like the language switch's 中 / EN
+        for entry in labels["zh"].values():
+            self.assertEqual(len(entry), 1)

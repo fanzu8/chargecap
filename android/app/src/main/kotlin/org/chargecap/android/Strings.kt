@@ -42,8 +42,10 @@ private val EN = mapOf(
     "上限" to "Upper limit",
     "下限" to "Lower limit",
     "禁止休眠" to "Inhibit sleep",
-    "系统可能挂起，开启可保持网络在线" to
-        "The system may suspend; on keeps the network up",
+    // Android's equivalent is a wake lock, not logind's sleep block, so the
+    // note says what it really does here
+    "持有唤醒锁：熄屏也不休眠，网络保持在线" to
+        "Holds a wake lock: no sleep, the network stays up",
     "指标" to "Metrics",
     "窗口" to "Window",
     // status table
@@ -88,6 +90,11 @@ private val EN = mapOf(
     "未知：未识别，通常是没插线" to "Unknown: nothing recognised, usually unplugged",
     // the app's own name: the Chinese name is 电电, the project name is chargecap
     "电电" to "chargecap",
+    // the header switches: background, then language
+    "背景" to "Background",
+    "语言" to "Language",
+    "暗色" to "Dark",
+    "亮色" to "Light",
     "跟随系统" to "Follow system",
     // root-only controls (the GTK app talks to a root daemon; Android has no
     // way to write the charger's sysfs without one)
@@ -95,6 +102,12 @@ private val EN = mapOf(
         "No root on this device: monitoring only, charging cannot be limited",
     "需要 root" to "needs root",
     "健康度" to "Health",
+    "健康度说明" to "About health",
+    "健康度是系统上报的电池状态，不是磨损百分比：\n" to
+        "The battery state the system reports, not a wear percentage:\n",
+    "磨损要算 充满容量/设计容量，而 Android 不发布 充满容量" to
+        "wear is charge_full over charge_full_design, and Android publishes" +
+        " no charge_full",
     "良好" to "Good",
     "过热" to "Overheat",
     "损坏" to "Dead",

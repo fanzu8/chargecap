@@ -37,13 +37,27 @@ private val DarkScheme = darkColorScheme(
     secondary = Color(0xFFB3CCBF),
 )
 
+/** The background the app is drawn on; dark is the default, as on pmOS. */
+enum class Theme(val tag: String) {
+    DARK("dark"), LIGHT("light"), AUTO("auto");
+
+    companion object {
+        fun of(tag: String?): Theme = entries.firstOrNull { it.tag == tag } ?: DARK
+    }
+}
+
 @Composable
 fun AppTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    theme: Theme = Theme.DARK,
     content: @Composable () -> Unit,
 ) {
+    val dark = when (theme) {
+        Theme.DARK -> true
+        Theme.LIGHT -> false
+        Theme.AUTO -> isSystemInDarkTheme()
+    }
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkScheme else LightScheme,
+        colorScheme = if (dark) DarkScheme else LightScheme,
         content = content,
     )
 }

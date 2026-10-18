@@ -53,6 +53,8 @@ Other mainline Qualcomm phones should work too as long as their charger exposes
 - **Chart**: overlay any of voltage / current / power / temperature / charge as
   **metrics**, over a **window** from 30 seconds to 48 hours. Samples live in
   memory only, for as long as the app is open.
+- **Dark by default**, with a background switch (dark / light / follow the
+  system) in the header, just before the language one.
 - **Follows the system language** (Chinese / English), switchable from the
   header.
 

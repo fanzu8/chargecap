@@ -26,6 +26,11 @@ class Prefs(context: Context) {
         get() = Lang.of(store.getString("lang", null))
         set(value) = store.edit().putString("lang", value.tag).apply()
 
+    /** The background: dark unless the user picks otherwise (the default). */
+    var theme: Theme
+        get() = Theme.of(store.getString("theme", null))
+        set(value) = store.edit().putString("theme", value.tag).apply()
+
     /** The selected metrics, in METRICS order; empty means "not chosen yet". */
     var metrics: List<String>
         get() = (store.getString("metrics", null) ?: "")

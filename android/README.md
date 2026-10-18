@@ -23,8 +23,14 @@ greyed out, with the reason next to them.
 - **Inhibit sleep** (禁止休眠): the Android equivalent of the daemon's
   `systemd-inhibit` -- a partial wake lock, held while the switch is on, so the
   device does not suspend and the network stays up.  This one *does* work here.
+- **Dark by default** (as the GTK app is now), with a background switch in the
+  header -- dark / light / follow the system -- next to the language one.
 - **Follows the system language** (Chinese / English), switchable from the
-  header; the metrics, window and language are remembered.
+  header; the metrics, window, background and language are remembered.
+
+The panel is a stack of boxed sections (充电限制, 禁止休眠, the status table,
+指标), the way the GTK app's page is a stack of `Adw.PreferencesGroup`s, so each
+part has a boundary and a title of its own.
 
 The sample history lives in memory only and holds 48 hours at 2 Hz, exactly like
 the GTK app's arrays.  Sampling runs in the process rather than in the UI, so the
@@ -46,6 +52,14 @@ reaches full (1,546,000 µAh became 4,000 in one step) and its absolute value
 never matched the percentage anyway, so `54/4000` must not be read as 1.35%.
 The counter's *rate* is trustworthy, and it is what calibrates the current
 below.
+
+Its ⓘ next to 健康度 says the same kind of thing, because the GTK app's health
+figure means something this platform does not offer: there it is a wear
+percentage (`charge_full / charge_full_design`), here it is the state the
+system reports (良好 / 过热 / ...).  The notes are the Android app's own
+wherever the two platforms differ -- 禁止休眠 holds a wake lock rather than a
+logind sleep block, the charger type is the port (AC / USB / wireless / dock)
+rather than SDP / DCP / CDP.
 
 The one place this port has to be clever is the **current**.  Android promises
 that `BATTERY_PROPERTY_CURRENT_NOW` is in microamps, but it is answered in
