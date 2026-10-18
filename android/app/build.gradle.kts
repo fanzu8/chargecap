@@ -21,8 +21,10 @@ android {
         applicationId = "org.chargecap.android"
         minSdk = 24
         targetSdk = 36
+        // the project's version, and the tag it ships as: CI refuses to release
+        // a v* tag that does not match this string
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.0.1"
     }
 
     buildTypes {

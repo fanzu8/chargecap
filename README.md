@@ -90,6 +90,10 @@ cd android && ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+CI builds the APK on every change and attaches it to a release when a version
+tag is pushed, named `chargecap-<version>-universal-debug.apk` (see
+[`android/README.md`](android/README.md#releases)).
+
 ## Install
 
 ```sh

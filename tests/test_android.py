@@ -618,6 +618,65 @@ class ProjectTest(SourceTest):
         self.assertHas(text, "GTK", "android/README.md")
 
 
+class CiTest(SourceTest):
+    """The Android workflow builds the APK CI ships, so its contract -- the tag
+    rule, the file name, what else goes into the release -- is pinned like the
+    rest of the project."""
+
+    def setUp(self):
+        self.workflow = read(ROOT, ".github", "workflows", "android.yml")
+
+    def test_ci_builds_the_apk_and_releases_it_on_a_tag(self):
+        self.assertHas(self.workflow, "assembleDebug")
+        self.assertHas(self.workflow, 'tags: ["v*"]')
+        self.assertHas(self.workflow, "actions/upload-artifact@v4")
+        self.assertHas(self.workflow, "startsWith(github.ref, 'refs/tags/')")
+        self.assertHas(self.workflow, "gh release create")
+        # attaching an asset needs the token to be allowed to write
+        self.assertHas(self.workflow, "permissions:")
+        self.assertHas(self.workflow, "contents: write")
+
+    def test_ci_needs_no_secret_of_its_own(self):
+        """The APK is signed with the debug key the toolchain generates, so the
+        workflow asks for no keystore and carries no credential."""
+        self.assertLacks(self.workflow, "secrets.")
+        self.assertHas(self.workflow, "GH_TOKEN: ${{ github.token }}")
+
+    def test_a_tag_has_to_match_the_version_the_build_declares(self):
+        self.assertHas(self.workflow, '"${GITHUB_REF_NAME}" != "v${VERSION}"')
+        version = re.search(r'versionName = "([^"]+)"',
+                            read(ANDROID, "app", "build.gradle.kts")).group(1)
+        self.assertRegex(version, r"^\d+\.\d+\.\d+$",
+                         "a version the v-prefixed tag can be compared with")
+
+    def test_the_release_files_are_named_as_the_readme_says(self):
+        self.assertHas(self.workflow,
+                       'apk="chargecap-${VERSION}-universal-debug.apk"')
+        self.assertHas(self.workflow, "SHA256SUMS")
+        self.assertHas(self.workflow, 'chargecap-${VERSION}-build-info.txt')
+        readme = read(ANDROID, "README.md")
+        self.assertHas(readme, "chargecap-0.0.1-universal-debug.apk")
+        self.assertHas(readme, "<name>-<version>-<abi>-<variant>.apk")
+
+    def test_the_build_info_says_who_signed_it(self):
+        """Two copies install over each other only when the same key signed
+        both, so the fingerprint belongs in the release."""
+        # an APK is not a signed jar: the certificate comes from apksigner
+        self.assertHas(self.workflow, "apksigner verify --print-certs")
+        self.assertHas(self.workflow, "Signer #1 certificate SHA-256 digest")
+        self.assertLacks(self.workflow, "keytool -printcert")
+        self.assertHas(read(ANDROID, "RELEASE-NOTES.md"), "debug key")
+
+    def test_the_release_notes_are_part_of_the_release(self):
+        self.assertHas(self.workflow, "android/RELEASE-NOTES.md")
+        notes = read(ANDROID, "RELEASE-NOTES.md")
+        self.assertHas(notes, "Android 7.0")
+        self.assertHas(notes, "WAKE_LOCK")
+
+    def test_ci_runs_the_suite_before_releasing(self):
+        self.assertHas(self.workflow, "python3 -m unittest")
+
+
 class LicenceTest(SourceTest):
     """The Android sources are part of the project, so they carry its licence
     header the way the GTK app and the daemon do."""

@@ -1,0 +1,139 @@
+name: android
+
+# The Android half: build the APK whenever it changes, and attach it to a
+# release when a version tag is pushed.  Nothing here needs a secret -- the APK
+# is signed with the debug key the toolchain generates, which is fine for an app
+# that is only ever sideloaded, but it does mean a CI build and a local build
+# carry different signatures and cannot be installed over each other (see
+# android/README.md, "Releases", and the release notes).
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  pull_request:
+    paths: ["android/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# only a tag needs it: that is what attaches the APK to a release
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # AGP 9 compiles Kotlin itself and wants JDK 17 or newer
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # the suite is stdlib Python and runs in half a second: a release should
+      # not go out over a red one
+      - name: run the test suite
+        run: python3 -m unittest
+
+      - name: read the version the build declares
+        id: version
+        working-directory: android
+        run: |
+          version=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
+          test -n "$version" || { echo "no versionName in app/build.gradle.kts" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "chargecap $version for Android"
+
+      - name: a version tag has to match the version the build declares
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ "${GITHUB_REF_NAME}" != "v${VERSION}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match versionName ${VERSION}:" >&2
+            echo "bump versionName in android/app/build.gradle.kts, or tag the" >&2
+            echo "commit that declares it" >&2
+            exit 1
+          fi
+
+      - name: build
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+
+      # chargecap-<version>-<abi>-<variant>.apk: the version without its v, the
+      # ABIs the APK carries (universal = all of them in one file), and which
+      # build it is.  The tag and the file say the same version, so a download
+      # can be traced back to the commit it came from.
+      - name: package
+        id: package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          built=android/app/build/outputs/apk/debug/app-debug.apk
+          abis=$(unzip -l "$built" |
+                 sed -n 's#.*lib/\([^/]*\)/[^/]*\.so#\1#p' |
+                 sort -u | paste -sd, -)
+          apk="chargecap-${VERSION}-universal-debug.apk"
+          cp "$built" "$apk"
+          sha256sum "$apk" | awk '{print $1"  "$2}' > SHA256SUMS
+          {
+            echo "chargecap ${VERSION} (Android)"
+            echo
+            echo "file      $apk"
+            echo "sha256    $(cut -d' ' -f1 SHA256SUMS)"
+            echo "tag       ${GITHUB_REF_NAME}"
+            echo "commit    ${GITHUB_SHA}"
+            echo "built     $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "abis      $abis"
+            # what signed it: an APK is not a signed JAR, so ask apksigner --
+            # the fingerprint is what tells two copies apart for installing
+            certs=$(apksigner verify --print-certs "$apk" 2>/dev/null || true)
+            echo "signed by $(echo "$certs" |
+                             sed -n 's/^Signer #1 certificate DN: //p' | head -1)"
+            echo "signer    $(echo "$certs" |
+                             sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
+                             head -1)"
+            echo "toolchain JDK $(java -version 2>&1 | head -1 |
+                                      sed 's/.*"\(.*\)".*/\1/')"
+          } > "chargecap-${VERSION}-build-info.txt"
+          echo "apk=$apk" >> "$GITHUB_OUTPUT"
+          cat "chargecap-${VERSION}-build-info.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chargecap-${{ steps.version.outputs.version }}-universal-debug
+          if-no-files-found: error
+          path: |
+            chargecap-*-universal-debug.apk
+            SHA256SUMS
+            chargecap-*-build-info.txt
+
+      - name: release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          {
+            cat android/RELEASE-NOTES.md
+            echo
+            echo "---"
+            echo
+            cat "chargecap-${VERSION}-build-info.txt"
+          } > release-notes.md
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "chargecap ${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md \
+            "chargecap-${VERSION}-universal-debug.apk" \
+            SHA256SUMS \
+            "chargecap-${VERSION}-build-info.txt"
