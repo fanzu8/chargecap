@@ -538,7 +538,7 @@ def scale_css():
                s["spin"], s["btn"], s["btnpad"], s["btnpad"], s["value"]))
 
 
-WINDOWS = (("30s", 30), ("1min", 60), ("2min", 120), ("5min", 300),
+WINDOWS = (("15s", 15), ("30s", 30), ("1min", 60), ("2min", 120), ("5min", 300),
            ("10min", 600), ("30min", 1800), ("1h", 3600),
            ("2h", 7200), ("4h", 14400), ("8h", 28800),
            ("12h", 43200), ("18h", 64800), ("24h", 86400),
@@ -989,9 +989,10 @@ class Window(Adw.ApplicationWindow):
             self._spread.append(box)
 
         # 电源: three bare values, no keys.  已连接 / 充电中 green,
-        # 未连接 / 未充电 yellow, 电量 plain.
-        spread_row(_("电源"), (("plugged", None), ("status", None),
-                            ("capacity", None)))
+        # 未连接 / 未充电 yellow, 电量 plain.  They hug the left instead of
+        # spreading out -- the gaps did nothing, and the room they free is
+        # where the chart's recording interval goes.
+        self._power_row()
 
         # USB 类型 with a help button, then 温度 on the same row
         help_btn = Gtk.MenuButton()
@@ -1156,7 +1157,6 @@ class Window(Adw.ApplicationWindow):
                  if w[1] == self.chart.window_secs))
         self.dd_window.connect("notify::selected", self._on_window_changed)
         ctl.append(self.dd_window)
-        ctl.append(self._sample_button())
         row_ctl.set_child(ctl)
         g_chart.add(row_ctl)
 
@@ -1378,6 +1378,34 @@ class Window(Adw.ApplicationWindow):
             self.row_upper.set_value(min(100, lo + MIN_GAP))
             self._loading = False
         self._send()
+
+    def _power_row(self):
+        """电源: the three values, then the chart's recording interval."""
+        row = Adw.ActionRow(title=_("电源"))
+        row.set_title_lines(1)
+        row.add_css_class("compact-status")
+        row.add_css_class("key-chip")
+        hug_title(row)
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        box.set_valign(Gtk.Align.CENTER)
+        for field, colour in (("plugged", None), ("status", None),
+                              ("capacity", None)):
+            val = cell(xalign=0.0)
+            if colour:
+                val.add_css_class(f"m-{colour}")
+            box.append(val)
+            self.f[field] = val
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        box.append(spacer)
+        self._sample_label_caption = Gtk.Label(label=_("采样间隔"))
+        self._sample_label_caption.add_css_class("subtitle")
+        self._sample_label_caption.set_valign(Gtk.Align.CENTER)
+        box.append(self._sample_label_caption)
+        box.append(self._sample_button())
+        row.add_suffix(box)
+        self.group_status.add(row)
+        self._title_texts.append(_("电源"))
 
     # ---- sampling ----
     def _tick_ms(self):

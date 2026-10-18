@@ -38,7 +38,7 @@ SOURCES = ("Strings.kt", "Battery.kt", "Chart.kt", "Panel.kt",
 # so.
 ANDROID_ONLY = {
     # the gauge's counter, and the two ⓘ that explain what the rows hold
-    "电量计/设计容量(mAh)",
+    "统计/设计容量(mAh)",
     "电量计说明",
     "电量计累计流过的电荷，不是剩余电量：\n",
     "· 与上面的电量百分比无关\n",
@@ -317,6 +317,25 @@ class ChartTest(SourceTest):
         self.assertEqual(panel.count("KeyedCell("), 3, "two uses and the definition")
         self.assertEqual(gui_constant("COL_FRACS")[0], 0.312)
 
+    def test_the_recording_interval_sits_on_the_power_row(self):
+        """电源's three values hug the left (the gaps between them were doing
+        nothing) and the interval takes the room they free -- the chart row is
+        left with 窗口, as it was."""
+        panel = kotlin("Panel.kt")
+        status = re.search(r"fun StatusSection\(.*?\n    }\n}", panel, re.S).group(0)
+        self.assertHas(status, 'tr("采样间隔")', "电源 row")
+        self.assertHas(status, "ChipPicker(", "电源 row")
+        self.assertHas(status, "Spacer(Modifier.weight(1f))", "电源 row")
+        # the three values are packed, not spread over equal weights
+        self.assertLacks(status, "Modifier.weight(1f))\n            ChargedValue")
+        chart = re.search(r"fun ChartSection\(.*?\n}", panel, re.S).group(0)
+        self.assertHas(chart, 'tr("窗口")', "chart row")
+        self.assertLacks(chart, "SAMPLES", "the interval left the chart row")
+
+    def test_the_window_list_starts_at_fifteen_seconds(self):
+        self.assertIn('"15s" to 15, "30s" to 30', kotlin("Strings.kt"))
+        self.assertIn('("15s", 15), ("30s", 30),', read(ROOT, "chargecap"))
+
     def test_the_panel_and_the_chart_run_on_two_clocks(self):
         """The panel is a live readout and keeps its 500 ms whatever the chart
         records at; a 20 s interval must not freeze the numbers."""
@@ -463,7 +482,7 @@ class CapabilityTest(SourceTest):
         platform really reports (the gauge's counter) and the health comes from
         the platform as a state, not as a percentage."""
         panel = kotlin("Panel.kt")
-        self.assertHas(panel, 'tr("电量计/设计容量(mAh)")')
+        self.assertHas(panel, 'tr("统计/设计容量(mAh)")')
         self.assertHas(panel, "BATTERY_HEALTH_GOOD -> tr(\"良好\")")
         self.assertHas(panel, "chargeCounterUAh")
         # the counter's number invites the wrong reading on its own, so the row

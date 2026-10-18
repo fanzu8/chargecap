@@ -300,18 +300,34 @@ private fun healthLabel(health: Int): String? = when (health) {
 // ---- the status table -------------------------------------------------------
 
 @Composable
-fun StatusSection(s: Snapshot) {
+fun StatusSection(s: Snapshot, sampleMs: Int, onSample: (Int) -> Unit) {
     val sc = scale()
     val red = METRIC_INFO.getValue("current_mA").color
 
     Section {
-        // 电源: three bare values, no keys
+        // 电源: three bare values, no keys.  They hug the left instead of
+        // spreading out -- the gaps were doing nothing, and the room they free
+        // is where the chart's recording interval goes.
         StatusRow(tr("电源")) {
-            ChargedValue(if (s.plugged) tr("已连接") else tr("未连接"), s.plugged,
-                         Modifier.weight(1f))
-            ChargedValue(if (s.charging) tr("充电中") else tr("未充电"), s.charging,
-                         Modifier.weight(1f))
-            ValueText(s.capacity?.let { "$it%" } ?: "—", modifier = Modifier.weight(1f))
+            ChargedValue(if (s.plugged) tr("已连接") else tr("未连接"), s.plugged)
+            Spacer(Modifier.width(10.dp))
+            ChargedValue(if (s.charging) tr("充电中") else tr("未充电"), s.charging)
+            Spacer(Modifier.width(10.dp))
+            ValueText(s.capacity?.let { "$it%" } ?: "—")
+            Spacer(Modifier.weight(1f))
+            Text(
+                tr("采样间隔"),
+                fontSize = sc.value.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            )
+            Spacer(Modifier.width(4.dp))
+            ChipPicker(
+                label = sampleLabel(sampleMs),
+                title = tr("采样间隔"),
+                items = SAMPLES,
+                current = sampleMs,
+                onPick = onSample,
+            )
         }
         RowDivider()
 
@@ -395,7 +411,7 @@ fun StatusSection(s: Snapshot) {
         // gauge's own coulomb counter -- all Android publishes, since there is no
         // charge_full to make a wear percentage out of -- so it carries a ⓘ: on its
         // own, "54/4000" invites exactly the wrong reading (see the help text).
-        StatusRow(tr("电量计/设计容量(mAh)"), fitTitle = true) {
+        StatusRow(tr("统计/设计容量(mAh)"), fitTitle = true) {
             val counter = s.chargeCounterUAh?.let { it / 1000 }
             val design = s.designUAh?.let { it / 1000 }
             ValueText(
@@ -643,8 +659,6 @@ fun ChartSection(
     onToggle: (String) -> Unit,
     windowSecs: Int,
     onWindow: (Int) -> Unit,
-    sampleMs: Int,
-    onSample: (Int) -> Unit,
     seq: Long,
 ) {
     Section(tr("指标")) {
@@ -655,24 +669,21 @@ fun ChartSection(
             }
             // the slack goes between the two, exactly as the GTK app's spacer
             // does, so the whole row stays one line wide
-            // the slack goes between the buttons and the two pickers, which is
-            // what keeps this on one line -- a 窗口 label here cost 66px and
-            // squeezed the interval chip into a two-line "s"
+            // the slack goes between the two, exactly as the GTK app's spacer
+            // does, so the whole row stays one line wide
             Spacer(Modifier.weight(1f))
+            Text(
+                tr("窗口"),
+                fontSize = scale().value.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            )
+            Spacer(Modifier.width(4.dp))
             ChipPicker(
                 label = WINDOWS.firstOrNull { it.second == windowSecs }?.first ?: "1min",
                 title = tr("窗口"),
                 items = WINDOWS,
                 current = windowSecs,
                 onPick = onWindow,
-            )
-            Spacer(Modifier.width(4.dp))
-            ChipPicker(
-                label = sampleLabel(sampleMs),
-                title = tr("采样间隔"),
-                items = SAMPLES,
-                current = sampleMs,
-                onPick = onSample,
             )
         }
         Spacer(Modifier.height(3.dp))

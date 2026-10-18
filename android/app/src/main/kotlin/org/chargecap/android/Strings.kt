@@ -55,7 +55,7 @@ private val EN = mapOf(
     // Android publishes the gauge's own counter, never charge_full: the row
     // says what the two numbers really are, and the ⓘ next to them says what
     // the first one is not
-    "电量计/设计容量(mAh)" to "Gauge / design (mAh)",
+    "统计/设计容量(mAh)" to "Stats / design (mAh)",
     "电量计说明" to "About the gauge",
     "电量计累计流过的电荷，不是剩余电量：\n" to
         "Charge that has flowed through the gauge, not what is left:\n",
@@ -217,7 +217,7 @@ fun metricAxisLabel(m: Metric): String =
 
 // ---- chart windows and the sampling rate ------------------------------------
 val WINDOWS = listOf(
-    "30s" to 30, "1min" to 60, "2min" to 120, "5min" to 300,
+    "15s" to 15, "30s" to 30, "1min" to 60, "2min" to 120, "5min" to 300,
     "10min" to 600, "30min" to 1800, "1h" to 3600,
     "2h" to 7200, "4h" to 14400, "8h" to 28800,
     "12h" to 43200, "18h" to 64800, "24h" to 86400,

@@ -259,9 +259,9 @@ class SizeTest(unittest.TestCase):
 
     def test_window_choices_are_the_documented_range(self):
         windows = gui_constant("WINDOWS")
-        self.assertEqual(windows[0], ("30s", 30))
+        self.assertEqual(windows[0], ("15s", 15))
         self.assertEqual(windows[-1], ("48h", 172800))
-        self.assertEqual(len(windows), 15)
+        self.assertEqual(len(windows), 16)
 
 
 class HeaderTest(unittest.TestCase):

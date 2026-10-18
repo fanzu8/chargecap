@@ -125,7 +125,11 @@ fun ChargecapApp(prefs: Prefs, inhibitor: SleepInhibitor) {
                     if (on) inhibitor.acquire() else inhibitor.release()
                 }
 
-                StatusSection(snapshot)
+                StatusSection(snapshot, sampleMs) { ms ->
+                    sampleMs = ms
+                    prefs.sampleMs = ms
+                    Monitor.intervalMs = ms.toLong()
+                }
 
                 ChartSection(
                     buffer = Monitor.buffer,
@@ -140,12 +144,6 @@ fun ChargecapApp(prefs: Prefs, inhibitor: SleepInhibitor) {
                     onWindow = { secs ->
                         windowSecs = secs
                         prefs.windowSecs = secs
-                    },
-                    sampleMs = sampleMs,
-                    onSample = { ms ->
-                        sampleMs = ms
-                        prefs.sampleMs = ms
-                        Monitor.intervalMs = ms.toLong()
                     },
                     seq = snapshot.seq,
                 )

@@ -44,12 +44,12 @@ GAUGE = {"capacity": 87, "voltage_now": 4243000, "current_now": -1510000,
 PLUGGED = {"BAT": {"status": "Charging"},
            "CHG": {"online": 1, "status": "1",
                    "usb_type": "Unknown SDP [DCP] CDP", "current_max": 900000},
-           "state": {"limit_enabled": True, "upper": 70, "lower": 68,
+           "state": {"limit_enabled": True, "upper": 50, "lower": 45,
                      "inhibit_sleep": False, "current_limit": 900}}
 UNPLUGGED = {"BAT": {"status": "Discharging"},
              "CHG": {"online": 0, "status": "0",
                      "usb_type": "Unknown SDP DCP CDP", "current_max": 0},
-             "state": {"limit_enabled": False, "upper": 70, "lower": 68,
+             "state": {"limit_enabled": False, "upper": 50, "lower": 45,
                        "inhibit_sleep": False, "current_limit": 0}}
 
 

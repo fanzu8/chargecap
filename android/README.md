@@ -18,7 +18,7 @@ greyed out, with the reason next to them.
   range, and what the gauge reports against the design capacity plus the
   platform's health state.  Refreshes twice a second.
 - **Chart**: overlay any of voltage / current / power / temperature / charge as
-  metrics, over a window from 30 seconds to 48 hours, with the GTK app's colours,
+  metrics, over a window from 15 seconds to 48 hours, with the GTK app's colours,
   axis sides, tick formats and time labels.
 - **Inhibit sleep** (禁止休眠): the Android equivalent of the daemon's
   `systemd-inhibit` -- a partial wake lock, held while the switch is on, so the
