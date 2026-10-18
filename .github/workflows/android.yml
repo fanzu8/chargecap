@@ -113,10 +113,15 @@ jobs:
                        -storepass chargecap 2>/dev/null |
                        sed -n 's/.*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f' | head -1)
             if [ "$actual" != "$expected" ]; then
-              echo "the APK was not signed by android/keystore:" >&2
-              echo "  apk:      $actual" >&2
-              echo "  expected: $expected" >&2
-              exit 1
+              # a debug build is signed with whatever debug key the machine
+              # generated, so only the release has to carry our keystore's key
+              if [ "$DIR" = "release" ]; then
+                echo "the APK was not signed by android/keystore:" >&2
+                echo "  apk:      $actual" >&2
+                echo "  expected: $expected" >&2
+                exit 1
+              fi
+              echo "debug build: signed by $actual (its own debug key)" >&2
             fi
           else
             echo "no apksigner under '${sdk}' -- skipping the signer check" >&2
