@@ -481,10 +481,10 @@ fun LimitsSection() {
             Modifier.padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            KeyChip(tr("需要 root"), AMBER, scale().small)
+            KeyChip(tr("未 root"), AMBER, scale().small)
             Spacer(Modifier.width(6.dp))
             Text(
-                tr("未 root：只有状态"),
+                tr("只能提供状态"),
                 fontSize = scale().small.sp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )

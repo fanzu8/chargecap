@@ -58,8 +58,7 @@ EN = {
     "上限": "Upper limit",
     "下限": "Lower limit",
     "禁止休眠": "Inhibit sleep",
-    "系统可能挂起，开启可保持网络在线":
-        "The system may suspend; on keeps the network up",
+    "系统不休眠，保持网络在线": "No sleep, the network stays up",
     "指标": "Metrics",
     "窗口": "Window",
     # status table (English is much wider than Chinese, so the values stay
@@ -858,7 +857,7 @@ class Window(Adw.ApplicationWindow):
         g_pow = Adw.PreferencesGroup()
         self.row_inhibit = Adw.SwitchRow(
             title=_("禁止休眠"),
-            subtitle=_("系统可能挂起，开启可保持网络在线"))
+            subtitle=_("系统不休眠，保持网络在线"))
         self.row_inhibit.add_css_class("compact-status")
         g_pow.add(self.row_inhibit)
         page.add(g_pow)

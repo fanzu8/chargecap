@@ -47,16 +47,14 @@ ANDROID_ONLY = {
     "健康度说明",
     "健康度是系统上报的电池状态，不是磨损百分比：\n",
     "磨损要算 充满容量/设计容量，而 Android 不发布 充满容量",
-    # 禁止休眠 is a wake lock here, not a logind sleep block
-    "系统不休眠，保持网络在线",
     # Android reports the port it is plugged into, not SDP / DCP / CDP
     "无线",
     "AC：充电头\n",
     "USB：电脑或充电宝的 USB 口\n",
     "无线：无线充电板\n",
     # the controls need root, and the health comes as a state, not a percentage
-    "未 root：只有状态",
-    "需要 root",
+    "未 root",
+    "只能提供状态",
     "健康度",
     "良好",
     "过热",
@@ -70,7 +68,7 @@ ANDROID_ONLY = {
 # follow, so both panels keep reading the same way
 SHARED = (
     "充电限制", "启动", "开启后：达到上限停止充电，降到下限恢复", "上限", "下限",
-    "禁止休眠", "指标", "窗口",
+    "禁止休眠", "系统不休眠，保持网络在线", "指标", "窗口",
     "背景", "语言", "暗色", "亮色", "跟随系统",
     "电源", "USB类型", "电压(V)", "功率(W)", "电流", "温度(°C)",
     "极值", "最大", "限制", "已连接", "未连接", "充电中", "未充电", "未知",
@@ -346,8 +344,8 @@ class CapabilityTest(SourceTest):
         self.assertHas(limits, 'tr("充电限制")', "LimitsSection")
         # the switch and both steppers are inert, not merely unlabelled
         self.assertGreaterEqual(limits.count("enabled = false"), 3)
-        self.assertHas(limits, 'tr("需要 root")', "LimitsSection")
-        self.assertHas(limits, 'tr("未 root：只有状态")', "LimitsSection")
+        self.assertHas(limits, 'KeyChip(tr("未 root"), AMBER', "LimitsSection")
+        self.assertHas(limits, 'tr("只能提供状态")', "LimitsSection")
 
     def test_the_input_current_limit_is_not_writable(self):
         """`限制` is drawn as an empty, inert box: without root there is no
@@ -482,17 +480,21 @@ class PanelTest(SourceTest):
                         actions.index("LanguageButton(lang)"))
 
     def test_the_hints_describe_this_platform(self):
-        """The GTK app holds a logind sleep block in a systemd world, computes a
-        wear percentage from the gauge, and reads SDP / DCP / CDP.  None of that
-        is true here, so the notes are the Android app's own."""
+        """Where the two platforms differ the notes are the Android app's own:
+        the GTK app reads SDP / DCP / CDP from its charger driver and computes a
+        wear percentage from the gauge, and neither exists here.  What both can
+        say the same way (the sleep note) is shared, not duplicated."""
         panel = kotlin("Panel.kt")
         self.assertHas(panel, 'tr("系统不休眠，保持网络在线")')
         self.assertHas(panel, "HealthHelp()")
         self.assertHas(panel, r'tr("健康度是系统上报的电池状态，不是磨损百分比：\n")')
-        # the GTK app's wording for the same rows is not reused
-        gtk = gui_constant("EN")
-        self.assertHas(gtk, "系统可能挂起，开启可保持网络在线")
-        self.assertLacks(all_kotlin(), "系统可能挂起，开启可保持网络在线")
+        # the GTK app's Linux-only subjects stay out of the Android app's own
+        # strings (a comment may name them; the UI may not)
+        shown = "\n".join(code_only(kotlin(name)) for name in SOURCES)
+        shown = "\n".join(line for line in shown.split("\n") if "tr(" in line)
+        for gtk_only in ("systemd-inhibit", "SDP", "DCP", "CDP", "logind"):
+            with self.subTest(gtk_only=gtk_only):
+                self.assertLacks(shown, gtk_only)
 
 
 class ProjectTest(SourceTest):
@@ -551,6 +553,30 @@ class ProjectTest(SourceTest):
         # the adaptive icon needs its background plate named
         self.assertHas(read(MAIN, "res", "values", "themes.xml"),
                        "ic_launcher_background")
+
+    def test_the_launcher_art_stays_inside_the_safe_circle(self):
+        """Android masks the middle 72dp of the 108dp adaptive icon and
+        guarantees a 66dp circle: art that reaches past that circle loses its
+        corners to a round mask, which is exactly what a full-bleed icon does on
+        the phone -- the icon's own <svg> scale has to be accounted for, or
+        "0.85" ends up drawing at 1.03."""
+        gen = read(ROOT, "tools", "make-icons.py")
+        box = [float(n) for n in
+               re.search(r"ART_BOX = \(([^)]*)\)", gen).group(1).split(",")]
+        target = float(re.search(r"TARGET = ([\d.]+)", gen).group(1))
+        safe = 66.0 / 108.0
+        self.assertLessEqual(target, 1.0)
+        # the art is scaled to `target` of the safe circle's diameter and centred
+        width = target * safe
+        height = width * (box[3] - box[1]) / (box[2] - box[0])
+        corner = ((width / 2) ** 2 + (height / 2) ** 2) ** 0.5
+        self.assertLessEqual(corner, safe / 2, "the artwork leaves the safe circle")
+        # the icon's own scale is dropped, not multiplied with ours
+        self.assertHas(gen, 're.sub(r"^\\s*<g[^>]*>", "", inner, count=1)')
+        # ... and the plain bitmaps sit on the plate the adaptive background uses
+        plate = re.search(r'PLATE = "([^"]+)"', gen).group(1)
+        self.assertHas(read(MAIN, "res", "values", "themes.xml"),
+                       f'<color name="ic_launcher_background">{plate}</color>')
 
     def test_the_launcher_label_follows_the_system_language(self):
         self.assertHas(read(MAIN, "res", "values", "strings.xml"), "chargecap")

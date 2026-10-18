@@ -32,7 +32,8 @@ def read(name):
 
 class SyntaxTest(unittest.TestCase):
     def test_scripts_compile(self):
-        for name in ("chargecap", "daemon.py", "tools/gtk-preview.py"):
+        for name in ("chargecap", "daemon.py", "tools/gtk-preview.py",
+                     "tools/make-icons.py"):
             with self.subTest(name):
                 py_compile.compile(os.path.join(HERE, name), doraise=True)
 
@@ -59,7 +60,7 @@ class LicenceTest(unittest.TestCase):
     """
 
     SOURCES = ("chargecap", "daemon.py", "install.sh", "uninstall.sh",
-               "tools/gtk-preview.py")
+               "tools/gtk-preview.py", "tools/make-icons.py")
     TESTS = ("tests/__init__.py", "tests/helpers.py", "tests/test_daemon.py",
              "tests/test_gui.py", "tests/test_scripts.py")
 
