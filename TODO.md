@@ -22,6 +22,8 @@ read the data and draw the chart** (monitor-only mode).
 3. Monitor-only mode: with no way to control charging at all (a desktop, an
    unrooted Android), only show the data and the chart, hide or grey out the
    controls.
+   - **done on Android**: `android/` is the monitoring half rewritten in Kotlin
+     + Compose; the controls are shown greyed out with the reason next to them
 4. Where it would land:
    - general Linux (laptops, mainline phones such as the PinePhone): the same
      code plus a backend table
@@ -29,6 +31,9 @@ read the data and draw the chart** (monitor-only mode).
      charger's sysfs (ready-made: ACC / AccA, a Magisk module); without root
      only the vendor's fixed threshold is available (Samsung "Protect battery",
      Pixel "Charging optimisation", OnePlus/Xiaomi "smart charging" ...).
+     - the port also has to work around the platform's own readings: there is no
+       `charge_full`, and `BATTERY_PROPERTY_CURRENT_NOW` is answered in mA by
+       some vendors where the API promises µA (see `android/README.md`).
 
 ## Languages
 

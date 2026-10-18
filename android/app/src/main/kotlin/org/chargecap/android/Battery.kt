@@ -1,0 +1,304 @@
+// ---------------------------------------------------------------------------
+// chargecap - keep an always-plugged-in phone inside a charge window
+//
+// Licence: General Pleasure League (GPL) 1.0
+//          https://github.com/fanzu8/General-Pleasure-League
+//
+//          You are the general of your own life, the master of your own fate:
+//          no restrictions, no compulsions - use it, change it, share it, and
+//          let pleasure be your primary guide.  Just be happy.
+// ---------------------------------------------------------------------------
+
+package org.chargecap.android
+
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
+import android.os.SystemClock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+
+// The Android side of the GTK app's sysfs reads.  Everything the panel and the
+// chart show comes from the two *public* Android sources: BatteryManager's
+// properties and the sticky ACTION_BATTERY_CHANGED broadcast.  They are the
+// closest thing Android has to a fuel gauge, and unlike /sys/class/power_supply
+// (SELinux: denied to apps) they need no privileges.
+//
+// The one thing Android does not expose is the design capacity, which the GTK
+// app reads straight from the gauge.  PowerProfile reports it and is only
+// reachable through reflection, so it is attempted once and the health
+// percentage simply stays "—" when that fails.
+
+/** One pass of the battery read, as the panel shows it. */
+data class Snapshot(
+    /** bumped every pass, so identical readings still redraw the chart */
+    val seq: Long = 0,
+    val capacity: Int? = null,          // %
+    val voltageV: Double? = null,       // V
+    val currentA: Double? = null,       // A (signed: + charging)
+    val tempC: Double? = null,          // °C
+    val charging: Boolean = false,
+    val plugged: Boolean = false,
+    val plugType: Int = 0,              // BatteryManager.BATTERY_PLUGGED_*
+    val chargeCounterUAh: Int? = null,  // the charge it holds now
+    val designUAh: Int? = null,         // the design capacity, if known
+    val health: Int = BatteryManager.BATTERY_HEALTH_UNKNOWN,
+    val currentMinMA: Double? = null,   // this session's extremes
+    val currentMaxMA: Double? = null,
+) {
+    val powerW: Double? get() =
+        if (voltageV != null && currentA != null) voltageV * currentA else null
+}
+
+/** The samples the chart draws, kept in memory only. */
+class SampleBuffer(val capacity: Int) {
+    private val time = LongArray(capacity)
+    private val data: Map<String, FloatArray> =
+        METRIC_KEYS.associateWith { FloatArray(capacity) }
+    private var next = 0        // where the next sample goes
+    var size = 0                // how many are held (grows to `capacity`)
+        private set
+
+    fun add(t: Long, values: Map<String, Double?>) {
+        time[next] = t
+        for ((key, array) in data) {
+            val v = values[key]
+            array[next] = if (v == null) Float.NaN else v.toFloat()
+        }
+        next = (next + 1) % capacity
+        if (size < capacity) size++
+    }
+
+    // logical index: 0 is the oldest sample held
+    private fun physical(i: Int) = (next - size + i + capacity) % capacity
+
+    fun timeAt(i: Int): Long = time[physical(i)]
+
+    fun valueAt(key: String, i: Int): Float = data.getValue(key)[physical(i)]
+
+    /** First logical index whose timestamp is at or after `cutoff`. */
+    fun firstVisibleFrom(cutoff: Long): Int {
+        var lo = 0
+        var hi = size
+        while (lo < hi) {
+            val mid = (lo + hi) / 2
+            if (timeAt(mid) < cutoff) lo = mid + 1 else hi = mid
+        }
+        return lo
+    }
+}
+
+/** Reads one snapshot from BatteryManager / the sticky battery broadcast. */
+class BatteryReader(context: Context) {
+    private val ctx = context.applicationContext
+    private val manager =
+        ctx.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+    private val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+    private val designUAh: Int? = designCapacityUAh(ctx)
+
+    // The current is measured from the charge counter rather than read from
+    // BATTERY_PROPERTY_CURRENT_NOW.  Both are supposed to be µA / µAh, but the
+    // counter's *deltas* are the one thing every vendor's health HAL gets right
+    // -- current_now is answered in mA on some phones (this Huawei does), which
+    // makes a 1.6 A charge read as 2 mA.  The counter itself is quantised to
+    // about 1 mAh, so the slope is taken over a few seconds of samples instead
+    // of between two of them, which keeps the curve off a staircase.
+    private class CounterSample(val at: Long, val uah: Int)
+
+    private val history = ArrayDeque<CounterSample>()
+    private var estimateA: Double? = null
+
+    private companion object {
+        const val SPAN_MS = 10000L    // how far back the slope reaches
+        const val MIN_SPAN_MS = 3000L // ... and the least it will settle for
+        const val KEEP_MS = 20000L    // samples older than this are dropped
+    }
+
+    private fun prop(id: Int): Int? =
+        manager.getIntProperty(id).takeIf { it != Int.MIN_VALUE }
+
+    /** The current in amperes, from the charge counter's slope. */
+    private fun counterCurrent(counter: Int?, nowMs: Long): Double? {
+        if (counter == null) return null
+        history.addLast(CounterSample(nowMs, counter))
+        while (history.size > 2 && nowMs - history.first().at > KEEP_MS) {
+            history.removeFirst()
+        }
+        val newest = history.last()
+        // the sample closest to SPAN_MS back, so the window stays roughly fixed
+        var reference: CounterSample? = null
+        for (sample in history) {
+            if (newest.at - sample.at >= SPAN_MS) reference = sample else break
+        }
+        if (reference == null && newest.at - history.first().at >= MIN_SPAN_MS) {
+            reference = history.first()
+        }
+        if (reference == null) return estimateA
+        val dt = (newest.at - reference.at) / 1000.0
+        if (dt <= 0.0) return estimateA
+        val ah = (newest.uah - reference.uah) / 1_000_000.0
+        estimateA = ah / (dt / 3600.0)
+        return estimateA
+    }
+
+    /**
+     * The current in amperes, taking the HAL's own reading when it can be
+     * trusted.
+     *
+     * The counter's slope is smooth in *scale* but coarse in time (its 1 mAh
+     * steps make a short window a staircase), while CURRENT_NOW is the opposite
+     * -- except that its unit is only a promise.  So the slope decides which
+     * unit the HAL is answering in, and the HAL's fine-grained reading is what
+     * the panel and the chart finally show.
+     */
+    private fun currentA(reported: Int?, counter: Int?, nowMs: Long): Double? {
+        val slope = counterCurrent(counter, nowMs)
+        if (reported == null) return slope
+        if (slope == null) return reported / 1_000_000.0    // µA, as documented
+        val asMicro = reported / 1_000_000.0
+        val asMilli = reported / 1_000.0
+        return if (abs(asMicro - slope) <= abs(asMilli - slope)) asMicro else asMilli
+    }
+
+    fun read(): Snapshot {
+        val nowMs = SystemClock.elapsedRealtime()
+        // the sticky intent is the same data the system UI shows
+        val intent = try {
+            ctx.registerReceiver(null, filter)
+        } catch (t: Throwable) {
+            null
+        }
+        fun extra(key: String, fallback: Int) =
+            intent?.getIntExtra(key, fallback) ?: fallback
+
+        val level = extra(BatteryManager.EXTRA_LEVEL, -1)
+        val levelScale = extra(BatteryManager.EXTRA_SCALE, 100)
+        val capacity = if (level >= 0 && levelScale > 0)
+            level * 100 / levelScale
+        else prop(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+
+        val mv = extra(BatteryManager.EXTRA_VOLTAGE, -1)
+        val deciC = extra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+        val status = extra(BatteryManager.EXTRA_STATUS, -1)
+        val plugged = extra(BatteryManager.EXTRA_PLUGGED, 0)
+        // CURRENT_NOW is what the gauge reports; some machines only answer with
+        // the averaged value, and a few answer with neither
+        val reportedUa = prop(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+            ?: prop(BatteryManager.BATTERY_PROPERTY_CURRENT_AVERAGE)
+        val counter = prop(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
+
+        return Snapshot(
+            capacity = capacity,
+            voltageV = if (mv > 0) mv / 1000.0 else null,
+            currentA = currentA(reportedUa, counter, nowMs),
+            tempC = if (deciC != Int.MIN_VALUE) deciC / 10.0 else null,
+            charging = status == BatteryManager.BATTERY_STATUS_CHARGING,
+            plugged = plugged != 0,
+            plugType = plugged,
+            chargeCounterUAh = counter,
+            designUAh = designUAh,
+            health = extra(BatteryManager.EXTRA_HEALTH,
+                           BatteryManager.BATTERY_HEALTH_UNKNOWN),
+        )
+    }
+}
+
+/**
+ * The design capacity the gauge knows and Android does not publish.
+ *
+ * PowerProfile.getAveragePower("battery.capacity") is a hidden API: reflection
+ * is the only way in, and whether the platform allows it depends on the
+ * version and on what the app targets.  It is tried once, and "not available"
+ * is a perfectly fine answer.
+ */
+private fun designCapacityUAh(context: Context): Int? = try {
+    val cls = Class.forName("com.android.internal.os.PowerProfile")
+    val profile = cls.getConstructor(Context::class.java).newInstance(context)
+    val mah = cls.getMethod("getAveragePower", String::class.java)
+        .invoke(profile, "battery.capacity") as Double
+    if (mah > 0) (mah * 1000).toInt() else null
+} catch (t: Throwable) {
+    null
+}
+
+/** The charger type, as Android reports it (the Linux app reads SDP/DCP/CDP). */
+fun plugTypeLabel(type: Int): String? = when (type) {
+    BatteryManager.BATTERY_PLUGGED_AC -> "AC"
+    BatteryManager.BATTERY_PLUGGED_USB -> "USB"
+    BatteryManager.BATTERY_PLUGGED_WIRELESS -> tr("无线")
+    BatteryManager.BATTERY_PLUGGED_DOCK -> "Dock"
+    else -> null
+}
+
+/**
+ * Samples the battery twice a second and keeps the last 48 hours.
+ *
+ * The loop lives in the process rather than in the UI, so the chart keeps
+ * filling while the screen is off (until Android reclaims the process) -- an
+ * always-plugged-in phone is watched for hours at a time, which is exactly
+ * when nobody is looking at the screen.
+ */
+object Monitor {
+    const val SAMPLE_MS = 500L
+
+    /** samples kept for the longest window (48 h at 2 Hz), plus a little slack */
+    val MAX_SAMPLES = (48 * 3600 * 1000L / SAMPLE_MS + 16).toInt()
+
+    val buffer = SampleBuffer(MAX_SAMPLES)
+
+    private val _state = MutableStateFlow(Snapshot())
+    val state: StateFlow<Snapshot> = _state
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var job: Job? = null
+
+    fun start(context: Context) {
+        if (job?.isActive == true) return
+        val reader = BatteryReader(context)
+        job = scope.launch {
+            // signed current extremes, reset every time the app starts
+            var minMA: Double? = null
+            var maxMA: Double? = null
+            var seq = 0L
+            while (isActive) {
+                val raw = reader.read()
+                val ma = raw.currentA?.let { it * 1000.0 }
+                if (ma != null) {
+                    minMA = minMA?.let { min(it, ma) } ?: ma
+                    maxMA = maxMA?.let { max(it, ma) } ?: ma
+                }
+                val snapshot = raw.copy(
+                    seq = ++seq,
+                    currentMinMA = minMA,
+                    currentMaxMA = maxMA,
+                )
+                buffer.add(
+                    SystemClock.elapsedRealtime(),
+                    mapOf(
+                        "voltage_v" to snapshot.voltageV,
+                        "current_mA" to ma,
+                        // power is plotted as a magnitude: it tracks the
+                        // current's shape almost exactly, so keeping its sign
+                        // on top of the current's would just overlap the two
+                        "power_w" to snapshot.powerW?.let { abs(it) },
+                        "temp_c" to snapshot.tempC,
+                        "capacity" to snapshot.capacity?.toDouble(),
+                    ),
+                )
+                _state.value = snapshot
+                delay(SAMPLE_MS)
+            }
+        }
+    }
+}

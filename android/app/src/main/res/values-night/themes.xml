@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  chargecap for Android — the monitoring half of the GTK app, rewritten in
+  Kotlin + Jetpack Compose.
+
+  Licence: General Pleasure League (GPL) 1.0
+           https://github.com/fanzu8/General-Pleasure-League
+-->
+<resources>
+    <style name="Theme.Chargecap" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+
+    <color name="window_background">#1C1B1F</color>
+</resources>

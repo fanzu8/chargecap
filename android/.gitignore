@@ -1,0 +1,9 @@
+# The Android build's own leftovers: the Gradle daemon's caches, the compiled
+# output, and the SDK path a machine writes for itself.
+
+.gradle/
+.kotlin/
+build/
+local.properties
+*.apk
+.idea/

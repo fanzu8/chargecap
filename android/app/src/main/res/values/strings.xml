@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  chargecap for Android — the monitoring half of the GTK app, rewritten in
+  Kotlin + Jetpack Compose.
+
+  Licence: General Pleasure League (GPL) 1.0
+           https://github.com/fanzu8/General-Pleasure-League
+-->
+<resources>
+    <!-- The launcher label follows the *system* language; the in-app language
+         switch is separate and lives in Strings.kt. -->
+    <string name="app_name">chargecap</string>
+</resources>

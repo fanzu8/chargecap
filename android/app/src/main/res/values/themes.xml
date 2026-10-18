@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  chargecap for Android — the monitoring half of the GTK app, rewritten in
+  Kotlin + Jetpack Compose.
+
+  Licence: General Pleasure League (GPL) 1.0
+           https://github.com/fanzu8/General-Pleasure-League
+-->
+<resources>
+    <!-- A window with no action bar: the whole UI is Compose.  Colours come
+         from the Material 3 scheme in Theme.kt, not from here. -->
+    <style name="Theme.Chargecap" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+
+    <color name="window_background">#FFFBFE</color>
+    <!-- the adaptive icon's background layer: the icon's green battery needs a
+         plain, light plate behind it -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>

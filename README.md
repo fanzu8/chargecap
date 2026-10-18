@@ -70,6 +70,24 @@ publishes a state file.
 
 The daemon polls every 3 s, the GUI every 500 ms.
 
+## Android
+
+`android/` holds the **monitoring half** of the same app, rewritten in Kotlin +
+Jetpack Compose for Android phones, with the same panel, the same chart, the
+same windows, colours and words.
+
+Android denies apps the charger's sysfs (SELinux) and has no daemon to ask, so
+the control half stays where the GTK app's root daemon is: the charge-limit rows
+are shown but switched off, labelled with the reason.  **禁止休眠** does work --
+it is a partial wake lock, Android's answer to `systemd-inhibit`.  See
+[`android/README.md`](android/README.md) for what the platform does and does not
+publish, and how the current is measured without `current_now` being trustworthy.
+
+```sh
+cd android && ./gradlew assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
 ## Install
 
 ```sh
@@ -89,15 +107,18 @@ sudo ./uninstall.sh        # removes everything and releases the charger
 
 ## Development
 
-Stdlib Python, no pip dependencies; the tests need neither a phone nor GTK:
+Stdlib Python, no pip dependencies; the tests need neither a phone nor GTK (nor,
+for the Android sources they also check, an Android SDK):
 
 ```sh
-python3 -m unittest        # 73 tests
+python3 -m unittest        # 113 tests
 ```
 
 They drive the real control loop against a fake sysfs tree, check the GUI's
-tables and layout invariants from its source, and check the packaging. CI runs
-them on Python 3.10–3.13.
+tables and layout invariants from its source, check the packaging, and hold the
+Android port to the GTK app -- the same metrics, windows, tick formats and
+translations on both sides (`tests/test_android.py`).  CI runs them on Python
+3.10–3.13.
 
 ## License
 

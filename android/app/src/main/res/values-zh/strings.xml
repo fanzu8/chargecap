@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  chargecap for Android — the monitoring half of the GTK app, rewritten in
+  Kotlin + Jetpack Compose.
+
+  Licence: General Pleasure League (GPL) 1.0
+           https://github.com/fanzu8/General-Pleasure-League
+-->
+<resources>
+    <!-- 电电: the project's Chinese name, used for the launcher icon -->
+    <string name="app_name">电电</string>
+</resources>

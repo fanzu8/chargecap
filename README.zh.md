@@ -57,6 +57,22 @@
 
 守护进程每 3 秒一轮，界面每 500 ms 刷新。
 
+## Android
+
+`android/` 里是同一个 App 的**只监控那一半**，用 Kotlin + Jetpack Compose 重写，
+面板、曲线、窗口、配色和文案都保持一致。
+
+Android 的 SELinux 不让 App 读写充电器的 sysfs，也没有守护进程可问，所以控制那
+半仍留在 GTK 版的 root 守护进程里：充电限制那几行照原样显示但被禁用，并注明原因。
+**禁止休眠**在这里是真能用的 —— 它是 partial wake lock，相当于 Android 版的
+`systemd-inhibit`。平台能读出什么、读不出什么，以及 `current_now` 不可信时电流
+怎么测，见 [`android/README.md`](android/README.md)。
+
+```sh
+cd android && ./gradlew assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
 ## 安装
 
 ```sh
@@ -75,14 +91,15 @@ sudo ./uninstall.sh        # 全部清掉，并把充电器恢复成"允许 + �
 
 ## 开发
 
-标准库 Python，没有 pip 依赖；测试不需要手机、也不需要 GTK：
+标准库 Python，没有 pip 依赖；测试不需要手机、不需要 GTK，也不需要 Android SDK：
 
 ```sh
-python3 -m unittest        # 73 个用例
+python3 -m unittest        # 113 个用例
 ```
 
-测试用假 sysfs 驱动真实控制循环、读界面源码校验各表与布局不变量、检查打包契约。
-CI 在 Python 3.10–3.13 上跑。
+测试用假 sysfs 驱动真实控制循环、读界面源码校验各表与布局不变量、检查打包契约，
+并把 Android 版和 GTK 版钉在一起 —— 指标、窗口、刻度格式、译文两边必须一致
+（`tests/test_android.py`）。CI 在 Python 3.10–3.13 上跑。
 
 ## 许可
 

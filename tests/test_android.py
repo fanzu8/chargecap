@@ -1,0 +1,511 @@
+# ---------------------------------------------------------------------------
+# chargecap - keep an always-plugged-in phone inside a charge window
+#
+# Licence: General Pleasure League (GPL) 1.0
+#          https://github.com/fanzu8/General-Pleasure-League
+#
+#          You are the general of your own life, the master of your own fate:
+#          no restrictions, no compulsions - use it, change it, share it, and
+#          let pleasure be your primary guide.  Just be happy.
+# ---------------------------------------------------------------------------
+
+"""Static checks on the Android port.
+
+The Android app is Kotlin, so it cannot be run here any more than the GTK app
+can; these tests read its sources instead and hold it to the desktop app -- the
+same metrics, the same windows, the same numbers, the same words -- plus the
+few places where Android genuinely cannot follow (the charging control needs
+root, and there is no charge_full).
+"""
+import ast
+import os
+import re
+import unittest
+
+from tests.helpers import ROOT, gui_constant, gui_tree
+
+ANDROID = os.path.join(ROOT, "android")
+MAIN = os.path.join(ANDROID, "app", "src", "main")
+KOTLIN = os.path.join(MAIN, "kotlin", "org", "chargecap", "android")
+
+SOURCES = ("Strings.kt", "Battery.kt", "Chart.kt", "Panel.kt",
+           "MainActivity.kt", "Prefs.kt", "Theme.kt")
+
+# the strings the Android UI needs and the GTK app has no counterpart for:
+# Android reports the port it is plugged into (AC / USB / wireless / dock)
+# rather than the Linux charger's SDP / DCP / CDP handshake, it publishes the
+# battery's health instead of charge_full, and the controls that need root say
+# so.
+ANDROID_ONLY = {
+    "电荷/设计容量(mAh)",
+    "无线",
+    "AC：充电头\n",
+    "USB：电脑或充电宝的 USB 口\n",
+    "无线：无线充电板\n",
+    "本机没有 root：只能监控，充电限制不可用",
+    "需要 root",
+    "健康度",
+    "良好",
+    "过热",
+    "损坏",
+    "过压",
+    "故障",
+    "过冷",
+}
+
+# the shared vocabulary: rename a label on one side and the other has to
+# follow, so both panels keep reading the same way
+SHARED = (
+    "充电限制", "启动", "开启后：达到上限停止充电，降到下限恢复", "上限", "下限",
+    "禁止休眠", "系统可能挂起，开启可保持网络在线", "指标", "窗口",
+    "电源", "USB类型", "电压(V)", "功率(W)", "电流", "温度(°C)",
+    "极值", "最大", "限制", "已连接", "未连接", "充电中", "未充电", "未知",
+    "现在", "选择上方指标以显示曲线", "USB 类型说明",
+    "未知：未识别，通常是没插线", "电电", "跟随系统",
+)
+
+# the GTK app writes its tick formats as Python format specs; Kotlin has only
+# printf's, so the two are compared through this translation
+FORMATS = {"{:.3f}": "%.3f", "{:+.0f}": "%+.0f", "{:.2f}": "%.2f",
+           "{:.1f}": "%.1f", "{:.0f}": "%.0f"}
+
+
+def read(path, *parts):
+    with open(os.path.join(path, *parts)) as f:
+        return f.read()
+
+
+def kotlin(name):
+    return read(KOTLIN, name)
+
+
+def all_kotlin():
+    return "\n".join(kotlin(name) for name in SOURCES)
+
+
+def code_only(src):
+    """The source with its comments taken out (a comment may name anything)."""
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    return "\n".join(re.sub(r"//.*$", "", line) for line in src.split("\n"))
+
+
+def unescape(text):
+    """A Kotlin (or Python) string literal as its value."""
+    return re.sub(r"\\(.)", lambda m: {"n": "\n", "t": "\t"}.get(m.group(1),
+                                                                m.group(1)),
+                  text)
+
+
+def en_table():
+    """The EN map of Strings.kt, as {source: translation}."""
+    body = re.search(r"private val EN = mapOf\((.*?)\n\)", kotlin("Strings.kt"),
+                     re.S).group(1)
+    return {unescape(src): unescape(dst) for src, dst in re.findall(
+        r'"((?:[^"\\]|\\.)*)"\s+to\s+"((?:[^"\\]|\\.)*)"', body)}
+
+
+def asked_strings():
+    """Every string the Kotlin UI translates with tr()."""
+    used = set()
+    for name in SOURCES:
+        for text in re.findall(r'tr\("((?:[^"\\]|\\.)*)"\)', kotlin(name)):
+            used.add(unescape(text))
+    return used
+
+
+def metric_table():
+    """METRICS from Strings.kt, as dicts (the Kotlin Metric dataclass)."""
+    block = re.search(r"val METRICS = listOf\((.*?)\n\)", kotlin("Strings.kt"),
+                      re.S).group(1)
+    out = []
+    for m in re.finditer(
+            r'Metric\("(\w+)", "([^"]+)", "([^"]+)", Color\(0x([0-9A-Fa-f]{8})\),'
+            r' "([^"]*)", "(\w+)"(?:,\s*fixed = ([\d.]+)f to ([\d.]+)f)?\)',
+            block):
+        key, name, unit, colour, fmt, side, lo, hi = m.groups()
+        out.append({
+            "key": key, "name": name, "unit": unit,
+            "colour": "#" + colour[2:].lower(), "format": fmt, "side": side,
+            "fixed": (float(lo), float(hi)) if lo else None,
+        })
+    return out
+
+
+def kotlin_constant(name):
+    """A val/const declared in one of the Kotlin sources."""
+    for source in SOURCES:
+        m = re.search(
+            r"(?:const )?(?:val|var) %s(?:\s*:\s*[\w<>?.]+)?\s*=\s*([\d.]+)"
+            % name, kotlin(source))
+        if m:
+            return float(m.group(1))
+    raise AssertionError(f"{name} is not declared in any of {SOURCES}")
+
+
+def gui_class_constant(name):
+    """A constant that lives inside a GTK class body (LiveChart.TICKS, say)."""
+    for node in ast.walk(gui_tree()):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if getattr(target, "id", None) == name:
+                    return ast.literal_eval(node.value)
+    raise AssertionError(f"{name} is not assigned anywhere in the GUI")
+
+
+class SourceTest(unittest.TestCase):
+    """A small helper, so a failure names the missing fragment instead of
+    printing the whole file."""
+
+    def assertHas(self, src, fragment, where=""):
+        self.assertTrue(fragment in src,
+                        f"{where or 'source'}: {fragment!r} not found")
+
+    def assertLacks(self, src, fragment, where=""):
+        self.assertFalse(fragment in src,
+                         f"{where or 'source'}: {fragment!r} is there")
+
+
+class StringsTest(SourceTest):
+    def setUp(self):
+        self.en = en_table()
+
+    def test_every_string_the_ui_asks_for_has_an_english_entry(self):
+        missing = sorted(s for s in asked_strings() if s not in self.en)
+        self.assertEqual(missing, [], f"untranslated: {missing}")
+
+    def test_no_stale_entries(self):
+        """An entry nobody asks for is dead weight (or a renamed string)."""
+        used = asked_strings()
+        unused = sorted(k for k in self.en if k not in used)
+        self.assertEqual(unused, [], f"unused entries: {unused}")
+
+    def test_shared_strings_match_the_gtk_app(self):
+        """The two UIs say the same thing in the same words: every string both
+        apps show has the same English translation on both sides."""
+        gtk = gui_constant("EN")
+        for key in SHARED:
+            with self.subTest(key):
+                self.assertIn(key, gtk, f"the GTK app lost {key}")
+                self.assertIn(key, self.en, f"the Android app lost {key}")
+                self.assertEqual(self.en[key], gtk[key])
+
+    def test_only_the_documented_android_extras_are_added(self):
+        """The strings Android needs and the GTK app does not are a short,
+        deliberate list -- an accidental extra one is a typo somewhere."""
+        gtk = gui_constant("EN")
+        extra = {k for k in self.en if k not in gtk}
+        self.assertEqual(sorted(extra), sorted(ANDROID_ONLY))
+
+    def test_the_ui_follows_the_system_unless_overridden(self):
+        """Three choices, like the GTK app: auto / Chinese / English."""
+        src = kotlin("Strings.kt")
+        self.assertHas(src, "Locale.getDefault().language")
+        for tag in ("auto", "zh", "en"):
+            self.assertHas(src, f'"{tag}"')
+        self.assertHas(src, "if (lang == Lang.AUTO) system() else lang")
+
+    def test_the_type_scale_is_the_gtk_apps(self):
+        """English is the wider language, so its table is set a point smaller
+        (the same SCALE numbers the GTK app uses, now in sp)."""
+        scale = gui_constant("SCALE")
+        src = kotlin("Strings.kt")
+        for key in ("title", "key", "small", "value", "sub", "spin"):
+            for lang in ("zh", "en"):
+                with self.subTest(lang=lang, key=key):
+                    self.assertHas(src, f"{key} = {scale[lang][key]:g}f")
+        # ... which is the whole point of the scale
+        self.assertLess(scale["en"]["value"], scale["zh"]["value"])
+
+
+class MetricTest(SourceTest):
+    def setUp(self):
+        self.gtk = gui_constant("METRICS")
+        self.android = metric_table()
+
+    def test_metrics_match_the_gtk_app(self):
+        """Key, name, unit, colour, tick format, axis side and the fixed range
+        are the GTK app's, one for one: the two charts draw the same picture."""
+        self.assertEqual(len(self.android), len(self.gtk),
+                         [m["key"] for m in self.android])
+        for mine, theirs in zip(self.android, self.gtk):
+            key, name, unit, colour, fmt, side, fixed = theirs
+            with self.subTest(metric=key):
+                self.assertEqual(mine["key"], key)
+                self.assertEqual(mine["name"], name)
+                self.assertEqual(mine["unit"], unit)
+                self.assertEqual(mine["colour"], colour.lower())
+                self.assertEqual(mine["format"], FORMATS[fmt])
+                self.assertEqual(mine["side"], side)
+                self.assertEqual(mine["fixed"], fixed)
+
+    def test_button_and_axis_abbreviations_match_the_gtk_app(self):
+        src = kotlin("Strings.kt")
+        for table in ("METRIC_BTN_EN", "METRIC_AXIS_EN", "METRIC_BRIGHT"):
+            for key, text in gui_constant(table).items():
+                with self.subTest(table=table, key=key):
+                    self.assertHas(src, f'"{key}" to ')
+
+    def test_the_english_abbreviations_are_the_gtk_apps(self):
+        """Short on purpose: the button takes the unit, the axis the quantity
+        symbol, because the full names eat into the plot."""
+        src = kotlin("Strings.kt")
+        for key, text in gui_constant("METRIC_BTN_EN").items():
+            self.assertHas(src, f'"{key}" to "{text}"')
+        for key, text in gui_constant("METRIC_AXIS_EN").items():
+            self.assertHas(src, f'"{key}" to "{text}"')
+
+    def test_the_default_selection_is_the_gtk_apps(self):
+        self.assertEqual(tuple(gui_constant("DEFAULT_METRICS")),
+                         ("voltage_v", "current_mA"))
+        self.assertHas(kotlin("Strings.kt"),
+                       'listOf("voltage_v", "current_mA")')
+
+
+class ChartTest(SourceTest):
+    def test_windows_match_the_gtk_app(self):
+        block = re.search(r"val WINDOWS = listOf\((.*?)\n\)",
+                          kotlin("Strings.kt"), re.S).group(1)
+        mine = [(label, int(secs)) for label, secs in re.findall(
+            r'"([^"]+)" to (\d+)', block)]
+        self.assertEqual(mine, [tuple(w) for w in gui_constant("WINDOWS")])
+
+    def test_sample_rate_and_history_match_the_gtk_app(self):
+        """Half a second per sample and a 48 hour history: the Android ring
+        buffer holds the same span as the GTK app's arrays."""
+        self.assertEqual(kotlin_constant("SAMPLE_MS"), 500.0)
+        self.assertEqual(gui_constant("SAMPLE_MS"), 500)
+        self.assertHas(all_kotlin(), "48 * 3600 * 1000L / SAMPLE_MS + 16")
+        # the GTK app computes the same number, from the same two constants
+        self.assertHas(read(ROOT, "chargecap"),
+                       "MAX_SAMPLES = 48 * 3600 * 1000 // SAMPLE_MS + 16")
+
+    def test_chart_height_is_the_gtk_apps(self):
+        self.assertEqual(kotlin_constant("CHART_HEIGHT"), 139.0)
+        m = re.search(r"self\.set_size_request\(-1, (\d+)\)",
+                      read(ROOT, "chargecap"))
+        self.assertEqual(int(m.group(1)), 139)
+
+    def test_grid_and_axis_geometry_match_the_gtk_app(self):
+        src = kotlin("Chart.kt")
+        self.assertHas(src, "PTS_PER_PX = 2")
+        self.assertHas(src, "GRID_DIVS = 5")
+        self.assertHas(src, "floatArrayOf(0f, 0.25f, 0.5f, 0.75f, 1f)")
+        self.assertHas(src, "30.dp")            # one Y-axis column
+        self.assertHas(src, "0.6.dp")           # curve thickness
+        self.assertHas(src, "0.5.dp")           # grid, thinner than the curve
+        self.assertEqual(gui_class_constant("TICKS"),
+                         (0.0, 0.25, 0.5, 0.75, 1.0))
+        self.assertEqual(gui_class_constant("GRID_DIVS"), 5)
+        self.assertEqual(gui_class_constant("PTS_PER_PX"), 2)
+        self.assertEqual(gui_class_constant("COL_W"), 30)
+        self.assertLess(gui_class_constant("GRID_W"),
+                        gui_class_constant("LINE_W"))
+
+    def test_a_flat_curve_gets_the_same_fallback_range(self):
+        """Both charts open a flat signal out to +-0.5, so it is not a hairline
+        on an invisible axis."""
+        src = kotlin("Chart.kt")
+        self.assertHas(src, "if (hi - lo < 1e-9f) {")
+        self.assertHas(src, "lo -= 0.5f")
+        self.assertHas(src, "hi += 0.5f")
+
+    def test_time_labels_use_the_gtk_apps_format(self):
+        src = kotlin("Chart.kt")
+        self.assertHas(src, 'tr("现在")')
+        self.assertHas(src, '"-%d:%02d".format(total / 60, total % 60)')
+        self.assertHas(src, '"-%d:%02d".format(total / 3600, total % 3600 / 60)')
+
+    def test_unselected_metric_buttons_are_deliberately_faint(self):
+        src = kotlin("Panel.kt")
+        self.assertHas(src, "onSurface.copy(alpha = 0.30f)")
+        self.assertHas(src, "metric.color.copy(alpha = 0.30f)")
+
+
+class CapabilityTest(SourceTest):
+    """What Android can and cannot do, pinned so the app stays honest about it:
+    the GTK app's control half needs a root daemon and sysfs writes."""
+
+    def test_the_root_only_controls_are_shown_but_disabled(self):
+        panel = kotlin("Panel.kt")
+        limits = re.search(r"fun LimitsSection\(\) \{(.*?)\n\}",
+                           panel, re.S).group(1)
+        self.assertHas(limits, 'tr("充电限制")', "LimitsSection")
+        # the switch and both steppers are inert, not merely unlabelled
+        self.assertGreaterEqual(limits.count("enabled = false"), 3)
+        self.assertHas(limits, 'tr("需要 root")', "LimitsSection")
+        self.assertHas(limits, 'tr("本机没有 root：只能监控，充电限制不可用")',
+                       "LimitsSection")
+
+    def test_the_input_current_limit_is_not_writable(self):
+        """`限制` is drawn as an empty, inert box: without root there is no
+        sysfs node to write a limit to."""
+        panel = kotlin("Panel.kt")
+        self.assertLacks(panel, "BATTERY_PROPERTY")
+        self.assertHas(panel, "border(1.dp")
+
+    def test_inhibit_sleep_is_a_wake_lock(self):
+        """The GTK app holds a systemd-inhibit; Android's equivalent is a
+        partial wake lock, and it needs the matching permission."""
+        manifest = read(MAIN, "AndroidManifest.xml")
+        self.assertHas(manifest, "android.permission.WAKE_LOCK", "manifest")
+        self.assertHas(kotlin("Prefs.kt"), "PARTIAL_WAKE_LOCK")
+        self.assertHas(kotlin("Prefs.kt"), '"chargecap:sleep"')
+        # ... and it is released with the app, never left behind
+        self.assertHas(kotlin("MainActivity.kt"), "inhibitor.release()")
+
+    def test_the_current_comes_from_the_charge_counter(self):
+        """CURRENT_NOW is answered in mA on some phones where the API promises
+        microamps; the counter's slope decides the unit instead of guessing."""
+        battery = kotlin("Battery.kt")
+        self.assertHas(battery, "BATTERY_PROPERTY_CHARGE_COUNTER")
+        self.assertHas(battery, "BATTERY_PROPERTY_CURRENT_NOW")
+        self.assertHas(battery, "currentA(reportedUa, counter, nowMs)")
+        self.assertHas(battery, "abs(asMicro - slope) <= abs(asMilli - slope)")
+
+    def test_the_battery_data_is_the_public_api(self):
+        """No sysfs, and no hidden APIs beyond the one optional reflection for
+        the design capacity -- which has to degrade to nothing."""
+        battery = code_only(kotlin("Battery.kt"))
+        self.assertLacks(battery, "/sys/class/power_supply")
+        self.assertLacks(battery, "Runtime.exec")
+        self.assertHas(battery, "BatteryManager")
+        self.assertHas(battery, "getIntProperty")
+        self.assertHas(battery, "PowerProfile")
+        self.assertHas(battery, "catch (t: Throwable) {")
+
+    def test_samples_are_kept_in_memory_only(self):
+        """Like the GTK app: nothing is written to disk, so nothing has to be
+        cleaned up but the wake lock."""
+        for name in SOURCES:
+            with self.subTest(name):
+                self.assertLacks(code_only(kotlin(name)), "openFileOutput")
+
+    def test_the_status_panel_says_what_android_does_not_publish(self):
+        """charge_full does not exist here, so the row is named for what the
+        platform really reports (the charge counter) and the health comes from
+        the platform as a state, not as a percentage."""
+        panel = kotlin("Panel.kt")
+        self.assertHas(panel, 'tr("电荷/设计容量(mAh)")')
+        self.assertHas(panel, "BATTERY_HEALTH_GOOD -> tr(\"良好\")")
+        self.assertHas(panel, "chargeCounterUAh")
+
+
+class ProjectTest(SourceTest):
+    """The packaging contract of the Android app, the way the GTK app has one:
+    ids, permissions, icons and the Android versions it supports."""
+
+    def setUp(self):
+        self.gradle = read(ANDROID, "app", "build.gradle.kts")
+        self.manifest = read(MAIN, "AndroidManifest.xml")
+
+    def test_the_package_and_the_application_id_agree(self):
+        namespace = re.search(r'namespace = "([^"]+)"', self.gradle).group(1)
+        app_id = re.search(r'applicationId = "([^"]+)"', self.gradle).group(1)
+        self.assertEqual(namespace, app_id)
+        self.assertHas(self.manifest, 'android:name=".MainActivity"', "manifest")
+        for name in SOURCES:
+            self.assertHas(kotlin(name), f"package {app_id}", name)
+
+    def test_the_exported_activity_is_the_launcher(self):
+        self.assertHas(self.manifest, "android.intent.action.MAIN", "manifest")
+        self.assertHas(self.manifest, "android.intent.category.LAUNCHER",
+                       "manifest")
+        self.assertHas(self.manifest, 'android:exported="true"', "manifest")
+
+    def test_only_the_wake_lock_permission_is_asked_for(self):
+        self.assertEqual(
+            re.findall(r'<uses-permission android:name="([^"]+)"',
+                       self.manifest),
+            ["android.permission.WAKE_LOCK"])
+
+    def test_it_installs_on_the_phone_it_was_written_for(self):
+        """Android 9 (API 28) is the phone this was tested on; API 24 is as far
+        back as the APIs used here go."""
+        min_sdk = int(re.search(r"minSdk = (\d+)", self.gradle).group(1))
+        target = int(re.search(r"targetSdk = (\d+)", self.gradle).group(1))
+        compile_sdk = int(re.search(r"compileSdk = (\d+)", self.gradle).group(1))
+        self.assertEqual(min_sdk, 24)
+        self.assertLessEqual(min_sdk, 28)
+        self.assertLessEqual(target, compile_sdk)
+
+    def test_the_launcher_icon_is_shipped_for_every_density(self):
+        self.assertHas(self.manifest, 'android:icon="@mipmap/ic_launcher"',
+                       "manifest")
+        self.assertHas(self.manifest, 'android:roundIcon="@mipmap/ic_launcher_round"',
+                       "manifest")
+        # the adaptive icon (API 26+) and the plain bitmaps below it
+        for name in ("ic_launcher.xml", "ic_launcher_round.xml"):
+            path = os.path.join(MAIN, "res", "mipmap-anydpi-v26", name)
+            self.assertTrue(os.path.exists(path), path)
+        for density in ("mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"):
+            for name in ("ic_launcher.png", "ic_launcher_round.png",
+                         "ic_launcher_foreground.png"):
+                path = os.path.join(MAIN, "res", f"mipmap-{density}", name)
+                with self.subTest(density=density, icon=name):
+                    self.assertTrue(os.path.exists(path), path)
+        # the adaptive icon needs its background plate named
+        self.assertHas(read(MAIN, "res", "values", "themes.xml"),
+                       "ic_launcher_background")
+
+    def test_the_launcher_label_follows_the_system_language(self):
+        self.assertHas(read(MAIN, "res", "values", "strings.xml"), "chargecap")
+        self.assertHas(read(MAIN, "res", "values-zh", "strings.xml"), "电电")
+
+    def test_the_build_does_not_need_the_kotlin_android_plugin(self):
+        """AGP 9 has built-in Kotlin; applying the old plugin is an error, and
+        the compose compiler plugin has to match the Kotlin version that ends
+        up on the build classpath."""
+        self.assertLacks(self.gradle, "org.jetbrains.kotlin.android")
+        self.assertHas(self.gradle, "org.jetbrains.kotlin.plugin.compose")
+        root = read(ANDROID, "build.gradle.kts")
+        compose = re.search(
+            r'org.jetbrains.kotlin.plugin.compose"\) version "([\d.]+)"',
+            root).group(1)
+        self.assertHas(root, f"kotlin-gradle-plugin:{compose}")
+
+    def test_the_wrapper_pins_the_gradle_version(self):
+        props = read(ANDROID, "gradle", "wrapper", "gradle-wrapper.properties")
+        self.assertIsNotNone(re.search(r"gradle-[\d.]+-bin\.zip", props))
+        self.assertTrue(os.path.exists(os.path.join(
+            ANDROID, "gradle", "wrapper", "gradle-wrapper.jar")))
+        self.assertTrue(os.path.exists(os.path.join(ANDROID, "gradlew")))
+
+    def test_the_readme_says_what_needs_root(self):
+        """The port's whole caveat has to be where a reader will look: this is
+        the monitoring half, and the control half needs a root daemon."""
+        text = read(ANDROID, "README.md")
+        self.assertHas(text, "root", "android/README.md")
+        self.assertHas(text, "GTK", "android/README.md")
+
+
+class LicenceTest(SourceTest):
+    """The Android sources are part of the project, so they carry its licence
+    header the way the GTK app and the daemon do."""
+
+    def test_every_kotlin_source_starts_with_the_header(self):
+        for name in SOURCES:
+            with self.subTest(name):
+                lines = kotlin(name).splitlines()
+                self.assertTrue(lines[0].startswith("// ---"), name)
+                head = "\n".join(lines[:14])
+                self.assertHas(head, "General Pleasure League (GPL) 1.0", name)
+                self.assertHas(head, "fanzu8/General-Pleasure-League", name)
+                self.assertHas(head, "general of your own life", name)
+                self.assertHas(head, "Just be happy", name)
+
+    def test_the_gradle_files_carry_it_too(self):
+        for name in ("settings.gradle.kts", "build.gradle.kts",
+                     "app/build.gradle.kts", "gradle.properties"):
+            with self.subTest(name):
+                text = read(ANDROID, *name.split("/"))
+                self.assertHas(text, "General Pleasure League (GPL) 1.0", name)
+
+    def test_the_tests_carry_it_too(self):
+        lines = open(os.path.join(ROOT, "tests",
+                                  "test_android.py")).read().splitlines()
+        head = "\n".join(lines[:14])
+        self.assertHas(head, "General Pleasure League (GPL) 1.0")
+
+
+if __name__ == "__main__":
+    unittest.main()
