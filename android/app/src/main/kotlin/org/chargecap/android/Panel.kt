@@ -157,7 +157,7 @@ private fun ChargedValue(text: String, on: Boolean, modifier: Modifier = Modifie
 }
 
 @Composable
-private fun UsbHelp() {
+private fun InfoButton(title: String, body: String) {
     var open by remember { mutableStateOf(false) }
     Box {
         TextButton(
@@ -168,18 +168,37 @@ private fun UsbHelp() {
             Text("ⓘ", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp).width(220.dp)) {
-                Text(tr("USB 类型说明"), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp).width(240.dp)) {
+                Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    tr("AC：充电头\n") + tr("USB：电脑或充电宝的 USB 口\n") +
-                        tr("无线：无线充电板\n") + tr("未知：未识别，通常是没插线"),
+                    body,
                     fontSize = 10.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
                 )
             }
         }
     }
+}
+
+@Composable
+private fun UsbHelp() {
+    InfoButton(
+        tr("USB 类型说明"),
+        tr("AC：充电头\n") + tr("USB：电脑或充电宝的 USB 口\n") +
+            tr("无线：无线充电板\n") + tr("未知：未识别，通常是没插线"),
+    )
+}
+
+@Composable
+private fun GaugeHelp() {
+    InfoButton(
+        tr("电量计说明"),
+        tr("电量计累计流过的电荷，不是剩余电量：\n") +
+            tr("· 与上面的电量百分比无关\n") +
+            tr("· 部分机型（本机就是）满电时会复位\n") +
+            tr("· 方向与量纲都可能不准；可靠的是它的变化速度，也就是电流"),
+    )
 }
 
 /** BatteryManager's health states, which the GTK app computes from capacities. */
@@ -288,11 +307,11 @@ fun StatusSection(s: Snapshot) {
         }
     }
 
-    // last row: what the counter says it holds now against the design capacity,
-    // and the state the platform reports for the battery.  (The GTK app shows
-    // charge_full / charge_full_design and a health percentage from the two;
-    // Android publishes neither, only the remaining charge.)
-    StatusRow(tr("电荷/设计容量(mAh)"), fitTitle = true) {
+    // last row: two mAh numbers and the battery's health.  The first one is the
+    // gauge's own coulomb counter -- all Android publishes, since there is no
+    // charge_full to make a wear percentage out of -- so it carries a ⓘ: on its
+    // own, "54/4000" invites exactly the wrong reading (see the help text).
+    StatusRow(tr("电量计/设计容量(mAh)"), fitTitle = true) {
         val counter = s.chargeCounterUAh?.let { it / 1000 }
         val design = s.designUAh?.let { it / 1000 }
         ValueText(
@@ -303,6 +322,8 @@ fun StatusSection(s: Snapshot) {
                 else -> "—"
             },
         )
+        Spacer(Modifier.width(4.dp))
+        GaugeHelp()
         Spacer(Modifier.width(10.dp))
         KeyChip(tr("健康度"), null, scale().small)
         Spacer(Modifier.width(4.dp))

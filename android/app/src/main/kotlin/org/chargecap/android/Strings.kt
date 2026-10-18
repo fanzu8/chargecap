@@ -11,6 +11,9 @@
 
 package org.chargecap.android
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import java.util.Locale
 
@@ -50,9 +53,20 @@ private val EN = mapOf(
     "功率(W)" to "Power",
     "电流" to "Current",
     "温度(°C)" to "Temp",
-    // Android publishes the remaining charge, never charge_full, so this row
-    // says what it really holds
-    "电荷/设计容量(mAh)" to "Charge / design (mAh)",
+    // Android publishes the gauge's own counter, never charge_full: the row
+    // says what the two numbers really are, and the ⓘ next to them says what
+    // the first one is not
+    "电量计/设计容量(mAh)" to "Gauge / design (mAh)",
+    "电量计说明" to "About the gauge",
+    "电量计累计流过的电荷，不是剩余电量：\n" to
+        "Charge that has flowed through the gauge, not what is left:\n",
+    "· 与上面的电量百分比无关\n" to
+        "· it has nothing to do with the percentage above\n",
+    "· 部分机型（本机就是）满电时会复位\n" to
+        "· on some phones (this one) it resets when the battery is full\n",
+    "· 方向与量纲都可能不准；可靠的是它的变化速度，也就是电流" to
+        "· its sign and scale are not to be trusted; its rate is" +
+        " (that is the current)",
     "极值" to "range",
     "最大" to "max",
     "限制" to "limit",
@@ -90,9 +104,15 @@ private val EN = mapOf(
 )
 
 object Strings {
-    /** The language chosen in the header; AUTO follows the system. */
-    @Volatile
-    var lang: Lang = Lang.AUTO
+    /**
+     * The language chosen in the header; AUTO follows the system.
+     *
+     * It is Compose state, not a plain field: the strings are translated while
+     * the UI is being built, and some of them live in their own composition
+     * scopes (the ⓘ popovers), which would otherwise keep the language they
+     * were first composed in.
+     */
+    var lang: Lang by mutableStateOf(Lang.AUTO)
 
     fun system(): Lang =
         if (Locale.getDefault().language == "zh") Lang.ZH else Lang.EN

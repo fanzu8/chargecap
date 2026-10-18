@@ -37,7 +37,12 @@ SOURCES = ("Strings.kt", "Battery.kt", "Chart.kt", "Panel.kt",
 # battery's health instead of charge_full, and the controls that need root say
 # so.
 ANDROID_ONLY = {
-    "电荷/设计容量(mAh)",
+    "电量计/设计容量(mAh)",
+    "电量计说明",
+    "电量计累计流过的电荷，不是剩余电量：\n",
+    "· 与上面的电量百分比无关\n",
+    "· 部分机型（本机就是）满电时会复位\n",
+    "· 方向与量纲都可能不准；可靠的是它的变化速度，也就是电流",
     "无线",
     "AC：充电头\n",
     "USB：电脑或充电宝的 USB 口\n",
@@ -391,12 +396,16 @@ class CapabilityTest(SourceTest):
 
     def test_the_status_panel_says_what_android_does_not_publish(self):
         """charge_full does not exist here, so the row is named for what the
-        platform really reports (the charge counter) and the health comes from
+        platform really reports (the gauge's counter) and the health comes from
         the platform as a state, not as a percentage."""
         panel = kotlin("Panel.kt")
-        self.assertHas(panel, 'tr("电荷/设计容量(mAh)")')
+        self.assertHas(panel, 'tr("电量计/设计容量(mAh)")')
         self.assertHas(panel, "BATTERY_HEALTH_GOOD -> tr(\"良好\")")
         self.assertHas(panel, "chargeCounterUAh")
+        # the counter's number invites the wrong reading on its own, so the row
+        # carries the explanation next to it
+        self.assertHas(panel, "GaugeHelp()")
+        self.assertHas(kotlin("Strings.kt"), "电量计累计流过的电荷，不是剩余电量：")
 
 
 class ProjectTest(SourceTest):

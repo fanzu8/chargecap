@@ -15,7 +15,7 @@ greyed out, with the reason next to them.
 
 - **Status panel**: charge %, plugged / charging state, charger type (AC / USB /
   wireless / dock), temperature, voltage, power, current with this session's
-  range, and the charge the counter reports against the design capacity plus the
+  range, and what the gauge reports against the design capacity plus the
   platform's health state.  Refreshes twice a second.
 - **Chart**: overlay any of voltage / current / power / temperature / charge as
   metrics, over a window from 30 seconds to 48 hours, with the GTK app's colours,
@@ -38,6 +38,14 @@ chart keeps filling while the screen is off (until Android reclaims the process)
 | **USB input current limit** (限制) | same: no writable node without root, so the box stays empty |
 | **Rated maximum current** (最大) | Android does not publish it |
 | **Health percentage** | Android gives the health *state*, never `charge_full`, so the percentage cannot be computed |
+
+The mAh row is the one place the numbers need a note, so it carries a ⓘ: the
+first of the two is the gauge's own coulomb counter -- charge that has flowed
+through it, *not* what is left.  On the P20 Pro it resets when the battery
+reaches full (1,546,000 µAh became 4,000 in one step) and its absolute value
+never matched the percentage anyway, so `54/4000` must not be read as 1.35%.
+The counter's *rate* is trustworthy, and it is what calibrates the current
+below.
 
 The one place this port has to be clever is the **current**.  Android promises
 that `BATTERY_PROPERTY_CURRENT_NOW` is in microamps, but it is answered in
