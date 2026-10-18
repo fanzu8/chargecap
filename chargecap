@@ -51,16 +51,15 @@ UI_FILE = os.path.expanduser("~/.config/chargecap/ui.json")
 # sites.  Only Chinese and English are shipped.
 EN = {
     # window / groups
-    "充电限制": "Charge limit",
-    "启动": "Enable",
-    "达到上限停止充电，降到下限恢复": "Stops at the upper limit, resumes at the lower",
+    "限制充电": "Limit charging",
+    "达上限停止充电，降到下限恢复充电，区间滞回": "Upper stops, lower resumes, holds between",
     "上限": "Upper limit",
     "下限": "Lower limit",
     "禁止休眠": "Inhibit sleep",
     "系统不休眠，保持网络在线": "No sleep, the network stays up",
     "指标": "Metrics",
     "窗口": "Window",
-    "采样间隔": "Sample interval",
+    "采样间隔": "Interval",
     # status table (English is much wider than Chinese, so the values stay
     # short: the panel has to hold five columns on a 360px screen)
     "电源": "Power",
@@ -83,6 +82,7 @@ EN = {
     "功率": "Power",
     "温度": "Temperature",
     "电量": "Charge",
+    "健康度": "Health",
     "现在": "now",
     "选择上方指标以显示曲线": "Select a metric above to plot",
     # USB type help
@@ -330,6 +330,11 @@ row.key-chip label.title { font-weight: 700; padding: 1px 6px;
    same size, full strength (colour comes from the metric css) */
 spinbutton.limit-spin text { font-size: 11px; }
 .charge-on  { color: #2ec27e; }
+/* the recording interval's caption: the row title's weight and colour */
+label.sample-caption { font-weight: 700; color: @window_fg_color; }
+/* the two states on the 电源 row: the row title's weight, not the value's */
+.bold-label { font-weight: 700; }
+
 .charge-off { color: #e5a50a; }
 /* the language switch sits in the header bar and stays as small as it can */
 button.lang-btn { min-width: 0px; min-height: 0px; padding: 1px 7px; }
@@ -515,9 +520,9 @@ def metric_css():
 # step down a point, and adding a language means adding one line here.
 SCALE = {
     "zh": {"title": 11, "key": 11, "small": 11, "value": 11, "sub": 11,
-           "spin": 11, "btn": 24, "btnpad": 7},
+           "spin": 11, "btn": 24, "btnpad": 7, "big": 13},
     "en": {"title": 10, "key": 10, "small": 10, "value": 10, "sub": 10,
-           "spin": 10, "btn": 20, "btnpad": 5},
+           "spin": 10, "btn": 20, "btnpad": 5, "big": 11},
 }
 
 
@@ -534,8 +539,13 @@ def scale_css():
             " padding-left: %dpx; padding-right: %dpx; }\n"
             "row.metric-row label, row.metric-row button,"
             " row.metric-row dropdown { font-size: %dpx; }\n"
+            # 限制充电 / 禁止休眠 and the 电源 row are a size up: three classes,
+            # so this beats the 11px the status table sets on its own rows
+            "row.switch-row.compact-status label.title { font-size: %dpx; }\n"
+            "row.power-row.compact-status label { font-size: %dpx; }\n"
             % (s["title"], s["value"], s["key"], s["small"], s["sub"],
-               s["spin"], s["btn"], s["btnpad"], s["btnpad"], s["value"]))
+               s["spin"], s["btn"], s["btnpad"], s["btnpad"], s["value"],
+               s["big"], s["big"]))
 
 
 WINDOWS = (("15s", 15), ("30s", 30), ("1min", 60), ("2min", 120), ("5min", 300),
@@ -856,11 +866,13 @@ class Window(Adw.ApplicationWindow):
         self.set_content(tv)
 
         # ---- limits ----
-        # only 启动 carries a note; 上限 / 下限 are self-explanatory and the
+        # only 限制充电 carries a note; 上限 / 下限 are self-explanatory and the
         # rows stay as compact as the status rows below
-        g_lim = Adw.PreferencesGroup(title=_("充电限制"))
+        # no group title: the switch below says what the box is for
+        g_lim = Adw.PreferencesGroup()
         self.row_enable = Adw.SwitchRow(
-            title=_("启动"), subtitle=_("达到上限停止充电，降到下限恢复"))
+            title=_("限制充电"),
+            subtitle=_("达上限停止充电，降到下限恢复充电，区间滞回"))
         g_lim.add(self.row_enable)
         self.row_upper = Adw.SpinRow(
             title=_("上限"),
@@ -872,6 +884,7 @@ class Window(Adw.ApplicationWindow):
         g_lim.add(self.row_lower)
         for row in (self.row_enable, self.row_upper, self.row_lower):
             row.add_css_class("compact-status")
+        self.row_enable.add_css_class("switch-row")
         page.add(g_lim)
 
         # show the unit on the spin value ("70%")
@@ -891,6 +904,7 @@ class Window(Adw.ApplicationWindow):
             title=_("禁止休眠"),
             subtitle=_("系统不休眠，保持网络在线"))
         self.row_inhibit.add_css_class("compact-status")
+        self.row_inhibit.add_css_class("switch-row")
         g_pow.add(self.row_inhibit)
         page.add(g_pow)
         self.row_inhibit.connect("notify::active", self._on_changed)
@@ -1106,10 +1120,10 @@ class Window(Adw.ApplicationWindow):
 
         current_row()
 
-        # last row: capacity in mAh and the resulting health percentage.
-        # This one sizes to its own content (its title is long).
-        info_row(((_("充满/设计容量(mAh)"), "charge_full", None),
-                  ("", "health", None)), resizable=False)
+        # last row: capacity in mAh and the resulting health percentage.  This
+        # one hugs its title (its title is long, so it does not join the shared
+        # columns) and the health value carries its own key.
+        self._capacity_row()
         page.add(self.group_status)
 
         # ---- chart: one overlaid rolling chart, no data kept after closing ----
@@ -1379,29 +1393,57 @@ class Window(Adw.ApplicationWindow):
             self._loading = False
         self._send()
 
+    def _capacity_row(self):
+        """充满/设计容量(mAh) and 健康度, packed right after the title."""
+        row = Adw.ActionRow(title=_("充满/设计容量(mAh)"))
+        row.set_title_lines(1)
+        row.add_css_class("compact-status")
+        row.add_css_class("key-chip")
+        hug_title(row)
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        box.set_valign(Gtk.Align.CENTER)
+        full = cell(xalign=0.0)
+        self.f["charge_full"] = full
+        box.append(full)
+        box.append(key_label(_("健康度")))
+        health = cell(xalign=0.0)
+        self.f["health"] = health
+        box.append(health)
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        box.append(spacer)
+        row.add_suffix(box)
+        self.group_status.add(row)
+
     def _power_row(self):
         """电源: the three values, then the chart's recording interval."""
         row = Adw.ActionRow(title=_("电源"))
         row.set_title_lines(1)
         row.add_css_class("compact-status")
         row.add_css_class("key-chip")
+        row.add_css_class("power-row")
         hug_title(row)
-        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         box.set_valign(Gtk.Align.CENTER)
-        for field, colour in (("plugged", None), ("status", None),
-                              ("capacity", None)):
+        for n, (field, colour) in enumerate((("plugged", None), ("status", None),
+                                             ("capacity", None))):
             val = cell(xalign=0.0)
             if colour:
                 val.add_css_class(f"m-{colour}")
+            if n < 2:
+                # 已连接 / 充电中 read as loudly as the 电源 beside them
+                val.add_css_class("bold-label")
             box.append(val)
             self.f[field] = val
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
         box.append(spacer)
-        self._sample_label_caption = Gtk.Label(label=_("采样间隔"))
-        self._sample_label_caption.add_css_class("subtitle")
-        self._sample_label_caption.set_valign(Gtk.Align.CENTER)
-        box.append(self._sample_label_caption)
+        # bright and bold like the row's own title; a chip here cost the width
+        # the three values need in English
+        caption = Gtk.Label(label=_("采样间隔"))
+        caption.add_css_class("sample-caption")
+        caption.set_valign(Gtk.Align.CENTER)
+        box.append(caption)
         box.append(self._sample_button())
         row.add_suffix(box)
         self.group_status.add(row)
@@ -1417,25 +1459,17 @@ class Window(Adw.ApplicationWindow):
         return (SAMPLE_MS_CHOICE <= SAMPLE_MS
                 or now - self._stored_at >= SAMPLE_MS_CHOICE / 1000.0)
 
-    def _on_sample(self, item, want):
-        """The recording interval changed: remember it and wake up at its pace."""
-        global SAMPLE_MS_CHOICE
-        if not item.get_active() or want not in [ms for _l, ms in SAMPLES]:
-            return
-        self._sample_pop.popdown()
-        SAMPLE_MS_CHOICE = want
-        d = load_ui()
-        d["sample_ms"] = want
-        save_ui(d)
-        self._sample_label.set_text(sample_label())
-
     def _sample_button(self):
-        """The interval next to the window: the same shape as the language and
-        background switches, because this row is a phone screen wide."""
+        """The recording interval, right after the states.
+
+        A compact chip carrying the same chevron 窗口's value has: the row is one
+        phone screen wide and a full dropdown here pushed the values into
+        ellipses.
+        """
         btn = Gtk.MenuButton()
         btn.add_css_class("flat")
         btn.add_css_class("lang-btn")
-        self._sample_label = Gtk.Label(label=sample_label())
+        self._sample_label = Gtk.Label(label=sample_label() + "  \u25be")
         btn.set_child(self._sample_label)
         btn.set_tooltip_text(_("采样间隔"))
 
@@ -1460,6 +1494,19 @@ class Window(Adw.ApplicationWindow):
         self._sample_pop = pop
         btn.set_popover(pop)
         return btn
+
+    def _on_sample(self, item, want):
+        """The recording interval changed: remember it and wake up at its pace."""
+        global SAMPLE_MS_CHOICE
+        if not item.get_active() or want not in [ms for _l, ms in SAMPLES]:
+            return
+        self._sample_pop.popdown()
+        SAMPLE_MS_CHOICE = want
+        d = load_ui()
+        d["sample_ms"] = want
+        save_ui(d)
+        self._sample_label.set_text(sample_label() + "  \u25be")
+
 
     # ---- chart controls ----
     def _save_ui(self):

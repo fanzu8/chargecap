@@ -83,7 +83,7 @@ class TranslationTest(unittest.TestCase):
         languages = {"zh", "en"}
         self.assertEqual(set(self.scale), languages)
         keys = {"title", "key", "small", "value", "sub", "spin", "btn",
-                "btnpad"}
+                "btnpad", "big"}
         for lang, entry in self.scale.items():
             self.assertEqual(set(entry), keys, f"{lang} scale is incomplete")
             for k, v in entry.items():
@@ -97,7 +97,9 @@ class TranslationTest(unittest.TestCase):
         self.assertIn("load_from_string(CSS + metric_css() + scale_css())", src)
         for rule in ("row.key-chip label.title", "row.key-chip label",
                      ".key-label", ".small-label", "row.unit-row label.subtitle",
-                     "spinbutton.limit-spin text", "row.metric-row label"):
+                     "spinbutton.limit-spin text", "row.metric-row label",
+                     "row.switch-row.compact-status label.title",
+                     "row.power-row.compact-status label"):
             self.assertIn(rule, src, f"scale_css is missing {rule}")
 
     def test_language_follows_the_system_unless_overridden(self):

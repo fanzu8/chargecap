@@ -54,8 +54,7 @@ ANDROID_ONLY = {
     "无线：无线充电板\n",
     # the controls need root, and the health comes as a state, not a percentage
     "未 root",
-    "只能提供状态",
-    "健康度",
+    "仅提供状态",
     "良好",
     "过热",
     "损坏",
@@ -67,9 +66,9 @@ ANDROID_ONLY = {
 # the shared vocabulary: rename a label on one side and the other has to
 # follow, so both panels keep reading the same way
 SHARED = (
-    "充电限制", "启动", "达到上限停止充电，降到下限恢复", "上限", "下限",
+    "限制充电", "达上限停止充电，降到下限恢复充电，区间滞回", "上限", "下限",
     "禁止休眠", "系统不休眠，保持网络在线", "指标", "窗口",
-    "背景", "语言", "暗色", "亮色", "跟随系统", "采样间隔",
+    "背景", "语言", "暗色", "亮色", "跟随系统", "采样间隔", "健康度",
     "电源", "USB类型", "电压(V)", "功率(W)", "电流", "温度(°C)",
     "极值", "最大", "限制", "已连接", "未连接", "充电中", "未充电", "未知",
     "现在", "选择上方指标以显示曲线", "USB 类型说明",
@@ -221,7 +220,7 @@ class StringsTest(SourceTest):
         (the same SCALE numbers the GTK app uses, now in sp)."""
         scale = gui_constant("SCALE")
         src = kotlin("Strings.kt")
-        for key in ("title", "key", "small", "value", "sub", "spin"):
+        for key in ("title", "key", "small", "value", "sub", "spin", "big"):
             for lang in ("zh", "en"):
                 with self.subTest(lang=lang, key=key):
                     self.assertHas(src, f"{key} = {scale[lang][key]:g}f")
@@ -332,6 +331,39 @@ class ChartTest(SourceTest):
         self.assertHas(chart, 'tr("窗口")', "chart row")
         self.assertLacks(chart, "SAMPLES", "the interval left the chart row")
 
+    def test_the_power_row_hugs_its_title_and_is_bold(self):
+        """电源's values start right after the title (no 68dp gutter) and the
+        two states carry the title's own weight."""
+        panel = kotlin("Panel.kt")
+        self.assertHas(panel, 'StatusRow(tr("电源"), fitTitle = true, titleSize = sc.big)')
+        status = re.search(r"fun StatusSection\(.*?\n    }\n}", panel, re.S).group(0)
+        self.assertEqual(status.count("bold = true"), 2, "plugged and charging")
+        self.assertHas(panel, "fontWeight = if (bold) FontWeight.Bold")
+        gtk = read(ROOT, "chargecap")
+        self.assertHas(gtk, "def _capacity_row(self):")
+        self.assertHas(gtk, 'box.append(key_label(_("健康度")))')
+        self.assertHas(gtk, 'self.f["charge_full"] = full')
+        self.assertHas(gtk, 'val.add_css_class("bold-label")')
+
+        self.assertHas(gtk, ".bold-label { font-weight: 700; }")
+
+    def test_the_interval_chip_is_raised_and_its_caption_bold(self):
+        """The recording interval reads as a control: a bold caption and a chip
+        with a shadow -- and a shade lighter, because a black shadow is
+        invisible on a dark panel."""
+        panel = kotlin("Panel.kt")
+        self.assertHas(panel, 'KeyChip(tr("采样间隔"), null, sc.value)')
+        self.assertHas(panel, "raised = true,")
+        self.assertHas(panel, "shadow: Dp = 0.dp,")
+        self.assertHas(panel, "alpha = if (raised) 0.16f else 0.10f")
+        self.assertHas(panel, ".shadow(shadow, shape)")
+        # the GTK app's interval is a compact chip carrying the same chevron
+        gtk = read(ROOT, "chargecap")
+        self.assertHas(gtk, "def _sample_button(self):")
+        self.assertHas(gtk, 'self._sample_label = Gtk.Label(label=sample_label() + "  \\u25be")')
+        self.assertHas(gtk, 'caption.add_css_class("sample-caption")')
+        self.assertHas(gtk, "label.sample-caption { font-weight: 700;")
+
     def test_the_window_list_starts_at_fifteen_seconds(self):
         self.assertIn('"15s" to 15, "30s" to 30', kotlin("Strings.kt"))
         self.assertIn('("15s", 15), ("30s", 30),', read(ROOT, "chargecap"))
@@ -407,11 +439,14 @@ class CapabilityTest(SourceTest):
         panel = kotlin("Panel.kt")
         limits = re.search(r"fun LimitsSection\(\) \{(.*?)\n\}",
                            panel, re.S).group(1)
-        self.assertHas(limits, 'tr("充电限制")', "LimitsSection")
+        # no section title: the switch below says what the box is for
+        self.assertHas(limits, "Section {", "LimitsSection")
+        self.assertLacks(limits, 'tr("充电限制")', "LimitsSection")
+        self.assertHas(limits, 'tr("限制充电")', "LimitsSection")
         # the switch and both steppers are inert, not merely unlabelled
         self.assertGreaterEqual(limits.count("enabled = false"), 3)
         self.assertHas(limits, 'KeyChip(tr("未 root"), AMBER', "LimitsSection")
-        self.assertHas(limits, 'tr("只能提供状态")', "LimitsSection")
+        self.assertHas(limits, 'tr("仅提供状态")', "LimitsSection")
 
     def test_the_hints_close_themselves(self):
         """A ⓘ covers the row it explains, so it goes away on its own instead

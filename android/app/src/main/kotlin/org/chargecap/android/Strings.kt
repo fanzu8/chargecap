@@ -35,16 +35,15 @@ enum class Lang(val tag: String) {
 // sysfs (charger types, root-only controls, battery health states).
 private val EN = mapOf(
     // window / groups
-    "充电限制" to "Charge limit",
-    "启动" to "Enable",
-    "达到上限停止充电，降到下限恢复" to "Stops at the upper limit, resumes at the lower",
+    "限制充电" to "Limit charging",
+    "达上限停止充电，降到下限恢复充电，区间滞回" to "Upper stops, lower resumes, holds between",
     "上限" to "Upper limit",
     "下限" to "Lower limit",
     "禁止休眠" to "Inhibit sleep",
     "系统不休眠，保持网络在线" to "No sleep, the network stays up",
     "指标" to "Metrics",
     "窗口" to "Window",
-    "采样间隔" to "Sample interval",
+    "采样间隔" to "Interval",
     // status table
     "电源" to "Power",
     "USB类型" to "USB",
@@ -96,7 +95,7 @@ private val EN = mapOf(
     // root-only controls (the GTK app talks to a root daemon; Android has no
     // way to write the charger's sysfs without one)
     "未 root" to "no root",
-    "只能提供状态" to "status only",
+    "仅提供状态" to "status only",
 
     "健康度" to "Health",
     "健康度说明" to "About health",
@@ -145,13 +144,15 @@ fun tr(text: String): String = Strings.tr(text)
 data class Scale(
     val title: Float, val key: Float, val small: Float, val value: Float,
     val sub: Float, val spin: Float, val btn: Float,
+    /** 限制充电 / 禁止休眠, and the 电源 row's own values: a size up. */
+    val big: Float,
 )
 
 val SCALE = mapOf(
     "zh" to Scale(title = 11f, key = 11f, small = 11f, value = 11f,
-                  sub = 11f, spin = 11f, btn = 28f),
+                  sub = 11f, spin = 11f, btn = 28f, big = 13f),
     "en" to Scale(title = 10f, key = 10f, small = 10f, value = 10f,
-                  sub = 10f, spin = 10f, btn = 26f),
+                  sub = 10f, spin = 10f, btn = 26f, big = 11f),
 )
 
 fun scale(): Scale = SCALE[Strings.effective.tag] ?: SCALE.getValue("en")

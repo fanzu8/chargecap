@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
@@ -176,6 +177,7 @@ private fun StatusRow(
     unit: String? = null,
     unitColor: Color? = null,
     fitTitle: Boolean = false,
+    titleSize: Float? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
     val s = scale()
@@ -186,7 +188,7 @@ private fun StatusRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(if (fitTitle) Modifier else Modifier.width(TITLE_W)) {
-            KeyChip(title, titleColor, s.title)
+            KeyChip(title, titleColor, titleSize ?: s.title)
             if (unit != null) {
                 Spacer(Modifier.height(1.dp))
                 KeyChip(unit, unitColor ?: titleColor, s.sub)
@@ -220,8 +222,23 @@ private fun RowScope.KeyedCell(
 
 /** 已连接 / 充电中 take the GTK app's green, 未连接 / 未充电 its amber. */
 @Composable
-private fun ChargedValue(text: String, on: Boolean, modifier: Modifier = Modifier) {
-    ValueText(text, if (on) GREEN else AMBER, modifier)
+private fun ChargedValue(
+    text: String,
+    on: Boolean,
+    modifier: Modifier = Modifier,
+    bold: Boolean = false,
+    big: Boolean = false,
+) {
+    val s = scale()
+    Text(
+        text,
+        color = if (on) GREEN else AMBER,
+        fontSize = (if (big) s.big else s.title).sp,
+        fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
+    )
 }
 
 @Composable
@@ -308,18 +325,18 @@ fun StatusSection(s: Snapshot, sampleMs: Int, onSample: (Int) -> Unit) {
         // 电源: three bare values, no keys.  They hug the left instead of
         // spreading out -- the gaps were doing nothing, and the room they free
         // is where the chart's recording interval goes.
-        StatusRow(tr("电源")) {
-            ChargedValue(if (s.plugged) tr("已连接") else tr("未连接"), s.plugged)
-            Spacer(Modifier.width(10.dp))
-            ChargedValue(if (s.charging) tr("充电中") else tr("未充电"), s.charging)
-            Spacer(Modifier.width(10.dp))
-            ValueText(s.capacity?.let { "$it%" } ?: "—")
+        StatusRow(tr("电源"), fitTitle = true, titleSize = sc.big) {
+            ChargedValue(if (s.plugged) tr("已连接") else tr("未连接"),
+                         s.plugged, big = true, bold = true)
+            Spacer(Modifier.width(8.dp))
+            ChargedValue(if (s.charging) tr("充电中") else tr("未充电"),
+                         s.charging, big = true, bold = true)
+            Spacer(Modifier.width(8.dp))
+            ValueText(s.capacity?.let { "$it%" } ?: "—", size = sc.big)
             Spacer(Modifier.weight(1f))
-            Text(
-                tr("采样间隔"),
-                fontSize = sc.value.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-            )
+            // the same inline key as 温度(°C) or 极值: bold, on its own chip,
+            // at full strength -- a bare dim label read as grey next to them
+            KeyChip(tr("采样间隔"), null, sc.value)
             Spacer(Modifier.width(4.dp))
             ChipPicker(
                 label = sampleLabel(sampleMs),
@@ -327,6 +344,7 @@ fun StatusSection(s: Snapshot, sampleMs: Int, onSample: (Int) -> Unit) {
                 items = SAMPLES,
                 current = sampleMs,
                 onPick = onSample,
+                raised = true,
             )
         }
         RowDivider()
@@ -458,7 +476,7 @@ private fun SwitchRow(
         Column(Modifier.weight(1f)) {
             Text(
                 title,
-                fontSize = s.title.sp,
+                fontSize = s.big.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
             )
@@ -519,7 +537,8 @@ private fun StepperRow(
 
 @Composable
 fun LimitsSection() {
-    Section(tr("充电限制")) {
+    // no section title: the switch below says what the box is for
+    Section {
         Row(
             Modifier.padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -527,13 +546,13 @@ fun LimitsSection() {
             KeyChip(tr("未 root"), AMBER, scale().small)
             Spacer(Modifier.width(6.dp))
             Text(
-                tr("只能提供状态"),
+                tr("仅提供状态"),
                 fontSize = scale().small.sp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
         }
         RowDivider()
-        SwitchRow(tr("启动"), tr("达到上限停止充电，降到下限恢复"),
+        SwitchRow(tr("限制充电"), tr("达上限停止充电，降到下限恢复充电，区间滞回"),
                   checked = false, enabled = false) {}
         RowDivider()
         StepperRow(tr("上限"), "50%", enabled = false) {}
@@ -561,10 +580,14 @@ private fun ChipButton(
     onClick: () -> Unit,
     color: Color,
     shape: Shape = RoundedCornerShape(10.dp),
+    shadow: Dp = 0.dp,
     content: @Composable () -> Unit,
 ) {
     Box(
         Modifier
+            // on a dark panel a black shadow is invisible, so a raised chip also
+            // takes a shade lighter background
+            .shadow(shadow, shape)
             .clip(shape)
             .background(color)
             .clickable(onClick = onClick)
@@ -618,13 +641,16 @@ private fun <T> ChipPicker(
     items: List<Pair<String, T>>,
     current: T,
     onPick: (T) -> Unit,
+    raised: Boolean = false,
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
         ChipButton(
             onClick = { open = true },
             shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+            color = MaterialTheme.colorScheme.onSurface.copy(
+                alpha = if (raised) 0.16f else 0.10f),
+            shadow = if (raised) 2.dp else 0.dp,
         ) {
             Text(
                 "$label \u25be",

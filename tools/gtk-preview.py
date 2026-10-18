@@ -103,6 +103,8 @@ def main():
                     help="nothing plugged in: discharging, limit off")
     ap.add_argument("--scheme", choices=("dark", "light", "auto"),
                     help="the background to open in (default: dark)")
+    ap.add_argument("--lang", choices=("zh", "en"),
+                    help="the language to open in (default: the system's)")
     ap.add_argument("--metric", action="append", choices=(
         "voltage_v", "current_mA", "power_w", "temp_c", "capacity"),
         help="a metric to plot (repeatable; default: the saved UI file)")
@@ -121,6 +123,8 @@ def main():
     config = os.path.join(tmp, ".config", "chargecap")
     os.makedirs(config, exist_ok=True)
     ui = {}
+    if args.lang:
+        ui["lang"] = args.lang
     if args.scheme:
         ui["scheme"] = args.scheme
     if args.metric:
