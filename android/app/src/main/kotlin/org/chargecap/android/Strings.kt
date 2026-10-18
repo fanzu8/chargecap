@@ -44,6 +44,7 @@ private val EN = mapOf(
     "系统不休眠，保持网络在线" to "No sleep, the network stays up",
     "指标" to "Metrics",
     "窗口" to "Window",
+    "采样间隔" to "Sample interval",
     // status table
     "电源" to "Power",
     "USB类型" to "USB",
@@ -224,6 +225,29 @@ val WINDOWS = listOf(
 )
 
 val WINDOW_SECS: Set<Int> = WINDOWS.map { it.second }.toSet()
+
+// ---- the chart's recording interval -----------------------------------------
+// How often a sample is stored, independent of the panel's own 500 ms readout:
+// the panel is a live number, this is the resolution of the history behind the
+// curve.  The buffer holds a fixed number of samples, so a faster interval buys
+// detail and spends reach -- 0.01 s keeps about an hour, 20 s keeps weeks.
+val SAMPLES = listOf(
+    "0.01s" to 10, "0.03s" to 30, "0.05s" to 50, "0.1s" to 100,
+    "0.3s" to 300, "0.5s" to 500, "1s" to 1000, "2s" to 2000,
+    "3s" to 3000, "5s" to 5000, "10s" to 10000, "15s" to 15000,
+    "20s" to 20000,
+)
+
+val SAMPLE_MS: Set<Int> = SAMPLES.map { it.second }.toSet()
+
+/** What a fresh install records at: the same rate the panel reads at. */
+const val DEFAULT_SAMPLE_MS = 500
+
+/** The interval a stored millisecond value stands for, or the default. */
+fun sampleMs(stored: Int): Int = if (stored in SAMPLE_MS) stored else DEFAULT_SAMPLE_MS
+
+fun sampleLabel(ms: Int): String =
+    SAMPLES.firstOrNull { it.second == ms }?.first ?: "0.5s"
 
 /** Formatting for the whole UI: the axis ticks are always ASCII dotted. */
 fun fmt(pattern: String, value: Double): String =

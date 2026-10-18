@@ -264,10 +264,21 @@ fun plugTypeLabel(type: Int): String? = when (type) {
  * when nobody is looking at the screen.
  */
 object Monitor {
+    /** how often the panel reads, whatever the chart is set to */
     const val SAMPLE_MS = 500L
 
     /** samples kept for the longest window (48 h at 2 Hz), plus a little slack */
     val MAX_SAMPLES = (48 * 3600 * 1000L / SAMPLE_MS + 16).toInt()
+
+    /**
+     * How often a sample is stored for the chart, in milliseconds.
+     *
+     * Two clocks, on purpose: the panel keeps its 500 ms readout (it is a live
+     * number), while the history is written at this interval.  A slower
+     * interval therefore costs the curve its detail and buys the buffer reach.
+     */
+    @Volatile
+    var intervalMs: Long = SAMPLE_MS
 
     val buffer = SampleBuffer(MAX_SAMPLES)
 
@@ -285,7 +296,10 @@ object Monitor {
             var minMA: Double? = null
             var maxMA: Double? = null
             var seq = 0L
+            var storedAt = 0L
+            var publishedAt = 0L
             while (isActive) {
+                val now = SystemClock.elapsedRealtime()
                 val raw = reader.read()
                 val ma = raw.currentA?.let { it * 1000.0 }
                 if (ma != null) {
@@ -297,21 +311,32 @@ object Monitor {
                     currentMinMA = minMA,
                     currentMaxMA = maxMA,
                 )
-                buffer.add(
-                    SystemClock.elapsedRealtime(),
-                    mapOf(
-                        "voltage_v" to snapshot.voltageV,
-                        "current_mA" to ma,
-                        // power is plotted as a magnitude: it tracks the
-                        // current's shape almost exactly, so keeping its sign
-                        // on top of the current's would just overlap the two
-                        "power_w" to snapshot.powerW?.let { abs(it) },
-                        "temp_c" to snapshot.tempC,
-                        "capacity" to snapshot.capacity?.toDouble(),
-                    ),
-                )
-                _state.value = snapshot
-                delay(SAMPLE_MS)
+                // the chart's clock: one sample per interval, however often the
+                // panel reads
+                val due = intervalMs <= SAMPLE_MS || now - storedAt >= intervalMs
+                if (due) {
+                    storedAt = now
+                    buffer.add(
+                        now,
+                        mapOf(
+                            "voltage_v" to snapshot.voltageV,
+                            "current_mA" to ma,
+                            // power is plotted as a magnitude: it tracks the
+                            // current's shape almost exactly, so keeping its
+                            // sign on top of the current's would just overlap
+                            "power_w" to snapshot.powerW?.let { abs(it) },
+                            "temp_c" to snapshot.tempC,
+                            "capacity" to snapshot.capacity?.toDouble(),
+                        ),
+                    )
+                }
+                // the panel's clock: never faster than 500 ms, so a 20 s
+                // recording interval does not freeze the live numbers
+                if (now - publishedAt >= SAMPLE_MS) {
+                    publishedAt = now
+                    _state.value = snapshot
+                }
+                delay(minOf(SAMPLE_MS, intervalMs).coerceAtLeast(10L))
             }
         }
     }

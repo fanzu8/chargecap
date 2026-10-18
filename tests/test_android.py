@@ -69,7 +69,7 @@ ANDROID_ONLY = {
 SHARED = (
     "充电限制", "启动", "达到上限停止充电，降到下限恢复", "上限", "下限",
     "禁止休眠", "系统不休眠，保持网络在线", "指标", "窗口",
-    "背景", "语言", "暗色", "亮色", "跟随系统",
+    "背景", "语言", "暗色", "亮色", "跟随系统", "采样间隔",
     "电源", "USB类型", "电压(V)", "功率(W)", "电流", "温度(°C)",
     "极值", "最大", "限制", "已连接", "未连接", "充电中", "未充电", "未知",
     "现在", "选择上方指标以显示曲线", "USB 类型说明",
@@ -281,6 +281,53 @@ class ChartTest(SourceTest):
             r'"([^"]+)" to (\d+)', block)]
         self.assertEqual(mine, [tuple(w) for w in gui_constant("WINDOWS")])
 
+    def test_the_recording_intervals_match_the_gtk_app(self):
+        """Both front ends offer the same intervals for the chart's history, and
+        the default is the rate the panel itself reads at."""
+        def table(src, start, stop):
+            """The (label, milliseconds) pairs of a front end's own table."""
+            block = src[src.index(start):].split(stop)[0]
+            # Kotlin writes "0.01s" to 10, Python ("0.01s", 10)
+            pairs = re.findall(r'"(\d+(?:\.\d+)?)s"(?: to |, )(\d+)', block)
+            return [(label + "s", int(ms)) for label, ms in pairs]
+
+        android = table(kotlin("Strings.kt"), "val SAMPLES = listOf", "\n)")
+        gtk = table(read(ROOT, "chargecap"), "SAMPLES = (", "\n\n")
+        self.assertEqual(android, gtk, "the two interval tables differ")
+        self.assertEqual(android[0], ("0.01s", 10))
+        self.assertEqual(android[-1], ("20s", 20000))
+        self.assertEqual(len(android), 13)
+        self.assertIn(("0.5s", 500), android)
+        # a fresh install records at the panel's own rate, in both apps
+        self.assertIn("const val DEFAULT_SAMPLE_MS = 500", kotlin("Strings.kt"))
+        self.assertIn("SAMPLE_MS = 500", read(ROOT, "chargecap"))
+        self.assertIn('store.getInt("sample_ms", DEFAULT_SAMPLE_MS)',
+                      kotlin("Prefs.kt"))
+        self.assertIn('.get("sample_ms")', read(ROOT, "chargecap"))
+
+    def test_the_two_front_ends_lay_their_cells_out_alike(self):
+        """A row's key-value cell starts at the same x in every row, which is
+        what the GTK app's COL_FRACS buys it -- and what the Android panel lost
+        when each row picked its own weights (温度 and 功率 did not line up)."""
+        panel = kotlin("Panel.kt")
+        self.assertHas(panel, "private const val COL_FIRST = 0.312f")
+        self.assertHas(panel, "private fun RowScope.KeyedCell(")
+        self.assertEqual(panel.count("weight(COL_FIRST)"), 2,
+                         "the USB row and the voltage row share the first column")
+        self.assertEqual(panel.count("KeyedCell("), 3, "two uses and the definition")
+        self.assertEqual(gui_constant("COL_FRACS")[0], 0.312)
+
+    def test_the_panel_and_the_chart_run_on_two_clocks(self):
+        """The panel is a live readout and keeps its 500 ms whatever the chart
+        records at; a 20 s interval must not freeze the numbers."""
+        battery = kotlin("Battery.kt")
+        self.assertHas(battery, "var intervalMs: Long = SAMPLE_MS")
+        self.assertHas(battery, "val due = intervalMs <= SAMPLE_MS || now - storedAt >= intervalMs")
+        self.assertHas(battery, "if (now - publishedAt >= SAMPLE_MS)")
+        self.assertHas(battery, "delay(minOf(SAMPLE_MS, intervalMs)")
+        self.assertHas(kotlin("MainActivity.kt"), "Monitor.intervalMs = prefs.sampleMs.toLong()")
+        self.assertHas(kotlin("Prefs.kt"), 'store.getInt("sample_ms", DEFAULT_SAMPLE_MS)')
+
     def test_sample_rate_and_history_match_the_gtk_app(self):
         """Half a second per sample and a 48 hour history: the Android ring
         buffer holds the same span as the GTK app's arrays."""
@@ -453,8 +500,8 @@ class PanelTest(SourceTest):
         body = chart[chart.index("Section(tr(\"指标\"))"):]
         self.assertHas(body, "Row(verticalAlignment = Alignment.CenterVertically)")
         self.assertHas(body, "Spacer(Modifier.weight(1f))")
-        self.assertLess(body.index("MetricButton("), body.index("WindowSelector("))
-        self.assertLess(body.index("WindowSelector("), body.index("LiveChart("))
+        self.assertLess(body.index("MetricButton("), body.index("ChipPicker("))
+        self.assertLess(body.index("ChipPicker("), body.index("LiveChart("))
         # one row, not a wrapping FlowRow, and one line per label
         self.assertLacks(body, "FlowRow")
 
@@ -466,7 +513,7 @@ class PanelTest(SourceTest):
         self.assertHas(panel, "private fun ChipButton(")
         self.assertHas(panel, ".clip(shape)")
         self.assertHas(panel, ".clickable(onClick = onClick)")
-        for user in ("MetricButton", "WindowSelector"):
+        for user in ("MetricButton",):
             body = re.search(r"private fun %s\(.*?\n\}" % user, panel, re.S).group(0)
             with self.subTest(user=user):
                 self.assertHas(body, "ChipButton(", user)

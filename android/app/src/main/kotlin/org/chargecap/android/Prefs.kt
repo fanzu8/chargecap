@@ -44,6 +44,11 @@ class Prefs(context: Context) {
         get() = store.getInt("window", 60).takeIf { it in WINDOW_SECS } ?: 60
         set(value) = store.edit().putInt("window", value).apply()
 
+    /** How often the chart stores a sample, in milliseconds. */
+    var sampleMs: Int
+        get() = sampleMs(store.getInt("sample_ms", DEFAULT_SAMPLE_MS))
+        set(value) = store.edit().putInt("sample_ms", value).apply()
+
     var inhibitSleep: Boolean
         get() = store.getBoolean("inhibit_sleep", false)
         set(value) = store.edit().putBoolean("inhibit_sleep", value).apply()

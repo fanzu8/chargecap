@@ -60,6 +60,7 @@ EN = {
     "系统不休眠，保持网络在线": "No sleep, the network stays up",
     "指标": "Metrics",
     "窗口": "Window",
+    "采样间隔": "Sample interval",
     # status table (English is much wider than Chinese, so the values stay
     # short: the panel has to hold five columns on a 360px screen)
     "电源": "Power",
@@ -542,7 +543,35 @@ WINDOWS = (("30s", 30), ("1min", 60), ("2min", 120), ("5min", 300),
            ("2h", 7200), ("4h", 14400), ("8h", 28800),
            ("12h", 43200), ("18h", 64800), ("24h", 86400),
            ("36h", 129600), ("48h", 172800))
-SAMPLE_MS = 500
+# The chart's recording interval: how often a sample is stored for the curve,
+# independent of the 500 ms the panel reads at.  The buffer holds a fixed number
+# of samples, so a faster interval buys detail and spends reach (0.01 s keeps
+# about an hour, 20 s keeps weeks).
+SAMPLES = (("0.01s", 10), ("0.03s", 30), ("0.05s", 50), ("0.1s", 100),
+           ("0.3s", 300), ("0.5s", 500), ("1s", 1000), ("2s", 2000),
+           ("3s", 3000), ("5s", 5000), ("10s", 10000), ("15s", 15000),
+           ("20s", 20000))
+SAMPLE_MS = 500          # the panel's own readout, and a fresh install's rate
+
+
+def stored_sample_ms():
+    """The recording interval pushed by hand, in milliseconds."""
+    try:
+        with open(UI_FILE) as f:
+            want = (json.load(f) or {}).get("sample_ms")
+    except Exception:
+        want = None
+    return want if want in [ms for _label, ms in SAMPLES] else SAMPLE_MS
+
+
+SAMPLE_MS_CHOICE = stored_sample_ms()
+
+
+def sample_label():
+    for label, ms in SAMPLES:
+        if ms == SAMPLE_MS_CHOICE:
+            return label
+    return "0.5s"
 # samples kept for the longest window (48 h at 2 Hz), plus a little slack
 MAX_SAMPLES = 48 * 3600 * 1000 // SAMPLE_MS + 16
 
@@ -1127,6 +1156,7 @@ class Window(Adw.ApplicationWindow):
                  if w[1] == self.chart.window_secs))
         self.dd_window.connect("notify::selected", self._on_window_changed)
         ctl.append(self.dd_window)
+        ctl.append(self._sample_button())
         row_ctl.set_child(ctl)
         g_chart.add(row_ctl)
 
@@ -1151,7 +1181,10 @@ class Window(Adw.ApplicationWindow):
         except Exception:
             pass
 
-        GLib.timeout_add(SAMPLE_MS, self.refresh)
+        self._stored_at = 0.0
+        self._painted_at = 0.0
+        # refresh() re-arms this itself, at whatever interval is set: one clock,
+        # so the panel can stay at 500 ms while the chart records slower
         self.refresh()
 
     # ---- responsive status columns ----
@@ -1346,6 +1379,60 @@ class Window(Adw.ApplicationWindow):
             self._loading = False
         self._send()
 
+    # ---- sampling ----
+    def _tick_ms(self):
+        """How often to wake up: the interval, or the panel's own 500 ms."""
+        return max(10, min(SAMPLE_MS, SAMPLE_MS_CHOICE))
+
+    def _sample_due(self, now):
+        """True when the chart's clock says a sample is due."""
+        return (SAMPLE_MS_CHOICE <= SAMPLE_MS
+                or now - self._stored_at >= SAMPLE_MS_CHOICE / 1000.0)
+
+    def _on_sample(self, item, want):
+        """The recording interval changed: remember it and wake up at its pace."""
+        global SAMPLE_MS_CHOICE
+        if not item.get_active() or want not in [ms for _l, ms in SAMPLES]:
+            return
+        self._sample_pop.popdown()
+        SAMPLE_MS_CHOICE = want
+        d = load_ui()
+        d["sample_ms"] = want
+        save_ui(d)
+        self._sample_label.set_text(sample_label())
+
+    def _sample_button(self):
+        """The interval next to the window: the same shape as the language and
+        background switches, because this row is a phone screen wide."""
+        btn = Gtk.MenuButton()
+        btn.add_css_class("flat")
+        btn.add_css_class("lang-btn")
+        self._sample_label = Gtk.Label(label=sample_label())
+        btn.set_child(self._sample_label)
+        btn.set_tooltip_text(_("采样间隔"))
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        group = None
+        for label, ms in SAMPLES:
+            item = Gtk.CheckButton(label=label)
+            item.set_active(ms == SAMPLE_MS_CHOICE)
+            if group is None:
+                group = item
+            else:
+                item.set_group(group)
+            item.connect("toggled", self._on_sample, ms)
+            box.append(item)
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_max_content_height(420)
+        scroller.set_propagate_natural_height(True)
+        scroller.set_child(box)
+        pop = Gtk.Popover()
+        pop.set_child(scroller)
+        self._sample_pop = pop
+        btn.set_popover(pop)
+        return btn
+
     # ---- chart controls ----
     def _save_ui(self):
         if not self._chart_ready:
@@ -1480,6 +1567,10 @@ class Window(Adw.ApplicationWindow):
 
     # ---- daemon/battery -> UI ----
     def refresh(self):
+        now = time.monotonic()
+        paint = now - self._painted_at >= SAMPLE_MS / 1000.0
+        if paint:
+            self._painted_at = now
         s = read_state()
         self._loading = True
         if s:
@@ -1596,19 +1687,25 @@ class Window(Adw.ApplicationWindow):
         if self._cur_cells is not None:
             self._apply_col_widths()
 
-        # feed the chart one sample per refresh, then let it redraw.
+        # feed the chart on its own clock; the panel above follows the 500 ms
         # power is plotted as a magnitude: it tracks the current's shape almost
         # exactly (P = V·I, V nearly constant), so keeping its sign on top of
         # the current's would just make the two curves overlap.
-        self.chart.add_sample({
-            "voltage_v": v,
-            "current_mA": raw_i / 1000.0 if raw_i is not None else None,
-            "power_w": abs(v * i) if (v is not None and i is not None) else None,
-            "temp_c": t,
-            "capacity": float(cap) if cap is not None else None,
-        })
-        self.chart.queue_draw()
-        return True
+        if self._sample_due(now):
+            self._stored_at = now
+            self.chart.add_sample({
+                "voltage_v": v,
+                "current_mA": raw_i / 1000.0 if raw_i is not None else None,
+                "power_w": abs(v * i) if (v is not None and i is not None)
+                else None,
+                "temp_c": t,
+                "capacity": float(cap) if cap is not None else None,
+            })
+        if paint:
+            self.chart.queue_draw()
+        # the interval can change while we run, so ask to be woken at its pace
+        GLib.timeout_add(self._tick_ms(), self.refresh)
+        return False
 
 
 class App(Adw.Application):

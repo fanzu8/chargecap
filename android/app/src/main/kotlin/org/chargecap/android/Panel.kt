@@ -62,6 +62,11 @@ import kotlinx.coroutines.delay
 // reason next to them.
 
 private val TITLE_W = 68.dp          // the title gutter of the status table
+// A row's cells are laid out in shared columns (the GTK app's COL_FRACS), so a
+// key in the second cell starts at the same x in every row -- the alignment the
+// GTK panel has and this one lost when its rows each picked their own weights.
+private const val COL_FIRST = 0.312f
+private const val COL_REST = 1f - COL_FIRST
 private val DISABLED = 0.38f         // Material's disabled alpha
 private const val HINT_MS = 2000L    // how long a ⓘ hint stays up
 private val AMBER = Color(0xFFE5A50A)    // the GTK app's "off" colour
@@ -196,6 +201,23 @@ private fun StatusRow(
     }
 }
 
+/** The second cell of a row: a key, then its value, in the shared column. */
+@Composable
+private fun RowScope.KeyedCell(
+    label: String,
+    color: Color? = null,
+    value: String,
+) {
+    Row(
+        Modifier.weight(COL_REST),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        KeyChip(label, color, scale().key)
+        Spacer(Modifier.width(6.dp))
+        ValueText(value, color)
+    }
+}
+
 /** 已连接 / 充电中 take the GTK app's green, 未连接 / 未充电 its amber. */
 @Composable
 private fun ChargedValue(text: String, on: Boolean, modifier: Modifier = Modifier) {
@@ -296,7 +318,7 @@ fun StatusSection(s: Snapshot) {
         // USB 类型 with a help button, then 温度 on the same row
         StatusRow(tr("USB类型")) {
             val type = plugTypeLabel(s.plugType)
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(COL_FIRST), verticalAlignment = Alignment.CenterVertically) {
                 ValueText(
                     when {
                         !s.plugged -> "—"
@@ -307,12 +329,9 @@ fun StatusSection(s: Snapshot) {
                 Spacer(Modifier.width(4.dp))
                 UsbHelp()
             }
-            KeyChip(tr("温度(°C)"), METRIC_INFO.getValue("temp_c").color, sc.key)
-            Spacer(Modifier.width(6.dp))
-            ValueText(
+            KeyedCell(
+                tr("温度(°C)"), METRIC_INFO.getValue("temp_c").color,
                 s.tempC?.let { fmt("%.1f", it) } ?: "—",
-                METRIC_INFO.getValue("temp_c").color,
-                Modifier.weight(1f),
             )
         }
         RowDivider()
@@ -321,14 +340,11 @@ fun StatusSection(s: Snapshot) {
             ValueText(
                 s.voltageV?.let { fmt("%.3f", it) } ?: "—",
                 METRIC_INFO.getValue("voltage_v").color,
-                Modifier.weight(1f),
+                Modifier.weight(COL_FIRST),
             )
-            KeyChip(tr("功率(W)"), METRIC_INFO.getValue("power_w").color, sc.key)
-            Spacer(Modifier.width(6.dp))
-            ValueText(
+            KeyedCell(
+                tr("功率(W)"), METRIC_INFO.getValue("power_w").color,
                 s.powerW?.let { fmt("%+.2f", it) } ?: "—",
-                METRIC_INFO.getValue("power_w").color,
-                Modifier.weight(2f),
             )
         }
         RowDivider()
@@ -536,7 +552,7 @@ private fun ChipButton(
             .clip(shape)
             .background(color)
             .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 3.dp),
+            .padding(horizontal = 5.dp, vertical = 3.dp),
     ) {
         content()
     }
@@ -559,31 +575,60 @@ private fun MetricButton(metric: Metric, on: Boolean, onClick: () -> Unit) {
     }
 }
 
+/**
+ * The title of a menu, so a popover says what it is choosing between.
+ */
 @Composable
-private fun WindowSelector(windowSecs: Int, onWindow: (Int) -> Unit) {
+internal fun MenuTitle(text: String) {
+    Text(
+        text,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+        modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 2.dp),
+    )
+}
+
+/**
+ * A chip that shows the value it holds and opens a list to change it.
+ *
+ * Content sized on purpose: a TextButton's minimum width and padding pushed the
+ * metric row onto a second line once already.
+ */
+@Composable
+private fun <T> ChipPicker(
+    label: String,
+    title: String,
+    items: List<Pair<String, T>>,
+    current: T,
+    onPick: (T) -> Unit,
+) {
     var open by remember { mutableStateOf(false) }
-    val label = WINDOWS.firstOrNull { it.second == windowSecs }?.first ?: "1min"
     Box {
-        // content sized on purpose: a TextButton's minimum width and padding
-        // pushed the metric row onto a second line
         ChipButton(
             onClick = { open = true },
             shape = RoundedCornerShape(8.dp),
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
         ) {
             Text(
-                "$label ▾",
+                "$label \u25be",
                 fontSize = scale().value.sp,
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            for ((text, secs) in WINDOWS) {
+            MenuTitle(title)
+            for ((itemLabel, value) in items) {
                 DropdownMenuItem(
-                    text = { Text(text, fontSize = scale().value.sp) },
+                    text = {
+                        Text(
+                            (if (value == current) "\u2713 " else "   ") + itemLabel,
+                            fontSize = scale().value.sp,
+                        )
+                    },
                     onClick = {
                         open = false
-                        onWindow(secs)
+                        onPick(value)
                     },
                 )
             }
@@ -598,6 +643,8 @@ fun ChartSection(
     onToggle: (String) -> Unit,
     windowSecs: Int,
     onWindow: (Int) -> Unit,
+    sampleMs: Int,
+    onSample: (Int) -> Unit,
     seq: Long,
 ) {
     Section(tr("指标")) {
@@ -608,14 +655,25 @@ fun ChartSection(
             }
             // the slack goes between the two, exactly as the GTK app's spacer
             // does, so the whole row stays one line wide
+            // the slack goes between the buttons and the two pickers, which is
+            // what keeps this on one line -- a 窗口 label here cost 66px and
+            // squeezed the interval chip into a two-line "s"
             Spacer(Modifier.weight(1f))
-            Text(
-                tr("窗口"),
-                fontSize = scale().value.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            ChipPicker(
+                label = WINDOWS.firstOrNull { it.second == windowSecs }?.first ?: "1min",
+                title = tr("窗口"),
+                items = WINDOWS,
+                current = windowSecs,
+                onPick = onWindow,
             )
             Spacer(Modifier.width(4.dp))
-            WindowSelector(windowSecs, onWindow)
+            ChipPicker(
+                label = sampleLabel(sampleMs),
+                title = tr("采样间隔"),
+                items = SAMPLES,
+                current = sampleMs,
+                onPick = onSample,
+            )
         }
         Spacer(Modifier.height(3.dp))
         LiveChart(

@@ -63,6 +63,7 @@ class MainActivity : ComponentActivity() {
 
         // Sampling lives in the process rather than in the UI, so the chart
         // keeps filling while the screen is off.
+        Monitor.intervalMs = prefs.sampleMs.toLong()
         Monitor.start(applicationContext)
 
         setContent { ChargecapApp(prefs, inhibitor) }
@@ -85,6 +86,7 @@ fun ChargecapApp(prefs: Prefs, inhibitor: SleepInhibitor) {
         mutableStateOf(prefs.metrics.ifEmpty { DEFAULT_METRICS })
     }
     var windowSecs by remember { mutableStateOf(prefs.windowSecs) }
+    var sampleMs by remember { mutableStateOf(prefs.sampleMs) }
     var inhibit by remember { mutableStateOf(prefs.inhibitSleep) }
     val snapshot by Monitor.state.collectAsState()
 
@@ -139,26 +141,17 @@ fun ChargecapApp(prefs: Prefs, inhibitor: SleepInhibitor) {
                         windowSecs = secs
                         prefs.windowSecs = secs
                     },
+                    sampleMs = sampleMs,
+                    onSample = { ms ->
+                        sampleMs = ms
+                        prefs.sampleMs = ms
+                        Monitor.intervalMs = ms.toLong()
+                    },
                     seq = snapshot.seq,
                 )
             }
         }
     }
-}
-
-/**
- * The title of a header menu, so the popover says what it is choosing between
- * (the ⓘ popovers have one too).
- */
-@Composable
-private fun MenuTitle(text: String) {
-    Text(
-        text,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-        modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 2.dp),
-    )
 }
 
 /**

@@ -309,3 +309,45 @@ class HeaderTest(unittest.TestCase):
         # short enough for a header bar, like the language switch's 中 / EN
         for entry in labels["zh"].values():
             self.assertEqual(len(entry), 1)
+
+
+class SamplingTest(unittest.TestCase):
+    """The chart's recording interval, and the clock it runs on.
+
+    The panel reads at 500 ms because it is a live number; the history is
+    written at whatever interval is set.  One timeout, re-armed each pass, so a
+    slower interval cannot slow the panel down with it.
+    """
+
+    def setUp(self):
+        self.src = gui_source()
+
+    def test_the_intervals_are_the_documented_list(self):
+        samples = gui_constant("SAMPLES")
+        self.assertEqual(samples[0], ("0.01s", 10))
+        self.assertEqual(samples[-1], ("20s", 20000))
+        self.assertEqual(len(samples), 13)
+        self.assertEqual(gui_constant("SAMPLE_MS"), 500)
+        # 0.5 s is both the panel's readout and what a fresh install records
+        self.assertIn(("0.5s", 500), samples)
+
+    def test_the_interval_is_remembered(self):
+        self.assertIn('d["sample_ms"] = want', self.src)
+        self.assertIn('.get("sample_ms")', self.src)
+        self.assertIn("SAMPLE_MS_CHOICE", self.src)
+
+    def test_the_tick_follows_the_interval_or_the_panel(self):
+        self.assertIn("def _tick_ms(self):", self.src)
+        self.assertIn('return max(10, min(SAMPLE_MS, SAMPLE_MS_CHOICE))', self.src)
+        self.assertIn("GLib.timeout_add(self._tick_ms(), self.refresh)", self.src)
+        # ... and only one chain: the first refresh arms it, later ones re-arm it
+        self.assertEqual(self.src.count("GLib.timeout_add(self._tick_ms()"), 1)
+
+    def test_a_sample_is_stored_only_when_it_is_due(self):
+        self.assertIn("def _sample_due(self, now):", self.src)
+        self.assertIn("if self._sample_due(now):", self.src)
+        self.assertIn("or now - self._stored_at >= SAMPLE_MS_CHOICE / 1000.0", self.src)
+
+    def test_the_panel_repaints_at_its_own_pace(self):
+        self.assertIn("paint = now - self._painted_at >= SAMPLE_MS / 1000.0", self.src)
+        self.assertIn("if paint:\n            self.chart.queue_draw()", self.src)
