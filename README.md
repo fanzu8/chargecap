@@ -39,8 +39,10 @@ Other mainline Qualcomm phones should work too as long as their charger exposes
   (a non-zero input current limit is still applied).
 - **USB input current limit**: `limit` is writable, `max` is the rated value it
   cannot exceed. `0` means no limit.
-- **Inhibit sleep**: holds a logind sleep block, so the **network stays up**
-  while the phone is plugged in (a suspended system would drop it).
+- **Inhibit sleep**: holds a logind sleep block for as long as this switch is
+  on, so the **network stays up** (a suspended system would drop it). It is not
+  tied to the charger; switching it off only means chargecap stops blocking
+  suspend -- whether the system then suspends is up to the system's own policy.
 - **Status panel**: `Power` (plugged / charging state / charge %), **USB type**
   (SDP / DCP / CDP / unknown, with an ⓘ explaining them), **temperature**,
   **voltage**, **power** and **current** — live value, this session's **range**

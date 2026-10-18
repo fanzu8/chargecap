@@ -274,12 +274,6 @@ class DaemonTest(unittest.TestCase):
         self.assertTrue(cfg["limit_enabled"])
         self.assertFalse(cfg["inhibit_sleep"])
 
-    def test_old_config_key_is_still_accepted(self):
-        path = os.path.join(self.tmp, "config.json")
-        with open(path, "w") as f:
-            json.dump({"inhibit_when_plugged": True}, f)
-        self.assertTrue(daemon.load_config(path)["inhibit_sleep"])
-
     def test_a_request_is_applied_persisted_and_consumed(self):
         cfg = daemon.load_config(self.args.config)
         with open(self.args.request, "w") as f:

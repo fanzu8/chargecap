@@ -192,9 +192,6 @@ def load_config(path):
         with open(path) as f:
             user = json.load(f)
         if isinstance(user, dict):
-            # accept the old key name from earlier configs
-            if "inhibit_sleep" not in user and "inhibit_when_plugged" in user:
-                user["inhibit_sleep"] = user["inhibit_when_plugged"]
             for k in ("upper", "lower", "inhibit_sleep", "limit_enabled",
                       "current_limit"):
                 if k in user:
@@ -248,8 +245,6 @@ def apply_request(cfg_path, request_path, cfg):
             cfg["lower"] = max(5, cfg["upper"] - 2)
         if "inhibit_sleep" in req:
             cfg["inhibit_sleep"] = bool(req["inhibit_sleep"])
-        elif "inhibit_when_plugged" in req:
-            cfg["inhibit_sleep"] = bool(req["inhibit_when_plugged"])
         if "current_limit" in req:
             cfg["current_limit"] = clampi(req["current_limit"], 0, 3000,
                                           cfg["current_limit"])
