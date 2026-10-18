@@ -554,23 +554,32 @@ class ProjectTest(SourceTest):
         self.assertHas(read(MAIN, "res", "values", "themes.xml"),
                        "ic_launcher_background")
 
-    def test_the_launcher_art_stays_inside_the_safe_circle(self):
-        """Android masks the middle 72dp of the 108dp adaptive icon and
-        guarantees a 66dp circle: art that reaches past that circle loses its
-        corners to a round mask, which is exactly what a full-bleed icon does on
-        the phone -- the icon's own <svg> scale has to be accounted for, or
-        "0.85" ends up drawing at 1.03."""
+    def test_the_launcher_art_stays_inside_the_visible_icon(self):
+        """Android shows the middle 72dp of the 108dp adaptive icon and masks
+        everything outside it, and the artwork is drawn 60% of the canvas wide.
+        What matters is the *drawn* silhouette -- the box less its rounded
+        corners -- not the box: at 60% the corners alone would reach the mask
+        edge, while the rounded artwork stays inside every mask shape.
+
+        (The icon's own <svg> carries a scale of its own: multiplying our scale
+        with it, rather than dropping it, is what once drew the icon at 103% of
+        the canvas and left its corners under a round mask.)"""
         gen = read(ROOT, "tools", "make-icons.py")
         box = [float(n) for n in
                re.search(r"ART_BOX = \(([^)]*)\)", gen).group(1).split(",")]
-        target = float(re.search(r"TARGET = ([\d.]+)", gen).group(1))
+        fraction = float(re.search(r"ART_FRACTION = ([\d.]+)", gen).group(1))
+        visible = 72.0 / 108.0
         safe = 66.0 / 108.0
-        self.assertLessEqual(target, 1.0)
-        # the art is scaled to `target` of the safe circle's diameter and centred
-        width = target * safe
+        self.assertLess(fraction, visible, "wider than the visible area")
+        width = fraction
         height = width * (box[3] - box[1]) / (box[2] - box[0])
-        corner = ((width / 2) ** 2 + (height / 2) ** 2) ** 0.5
-        self.assertLessEqual(corner, safe / 2, "the artwork leaves the safe circle")
+        self.assertLess(height, visible)
+        # the artwork's corner radius, in canvas fractions
+        radius = 88.0 * (fraction * 1024 / (box[2] - box[0])) / 1024
+        corner = ((width / 2 - radius) ** 2
+                  + (height / 2 - radius) ** 2) ** 0.5 + radius
+        self.assertLessEqual(corner, visible / 2, "a mask would cut the artwork")
+        self.assertLessEqual(corner, safe / 2, "not inside the guaranteed circle")
         # the icon's own scale is dropped, not multiplied with ours
         self.assertHas(gen, 're.sub(r"^\\s*<g[^>]*>", "", inner, count=1)')
         # ... and the plain bitmaps sit on the plate the adaptive background uses

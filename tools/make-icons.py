@@ -38,10 +38,13 @@ RES = os.path.join(ROOT, "android", "app", "src", "main", "res")
 # the battery and its terminal nub, in the SVG's own units (x1, y1, x2, y2)
 ART_BOX = (162, 330, 862, 694)
 CLEAR = 1024.0            # the SVG's canvas
-SAFE_DIAMETER = 66.0 / 108.0   # the adaptive icon's safe circle, as a fraction
-# as much of that circle as the artwork's own shape allows: the limit is its
-# corners, not its width, so this is where they meet the circle and no further
-TARGET = 0.88
+VISIBLE = 72.0 / 108.0    # the middle of the adaptive icon, which the mask shows
+SAFE_DIAMETER = 66.0 / 108.0   # ... and the circle it guarantees inside that
+# how wide the artwork is drawn, as a fraction of the canvas.  58% is the size
+# the phone looks right at, and it is also the largest size at which the
+# *drawn* silhouette (the box less its rounded corners) still fits inside the
+# 66dp circle Android guarantees -- so no mask shape can cut it.
+ART_FRACTION = 0.58
 PLATE = "#FFFFFF"
 
 DENSITIES = {"mdpi": 1.0, "hdpi": 1.5, "xhdpi": 2.0, "xxhdpi": 3.0,
@@ -52,8 +55,8 @@ ICONS = (("ic_launcher", 48, True),                   # plain bitmaps: 48dp
 
 
 def art_scale():
-    """The scale that puts the artwork at TARGET of the safe circle."""
-    return TARGET * SAFE_DIAMETER * CLEAR / (ART_BOX[2] - ART_BOX[0])
+    """The scale that draws the artwork ART_FRACTION of the canvas wide."""
+    return ART_FRACTION * CLEAR / (ART_BOX[2] - ART_BOX[0])
 
 
 def wrap(inner, background):
