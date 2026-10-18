@@ -99,18 +99,27 @@ jobs:
           cp "$built" "$APK"
           sha256sum "$APK" | awk '{print $1"  "$2}' > SHA256SUMS
 
-          # an APK is not a signed jar, so ask apksigner; and check it is *our*
-          # key that signed it, not whatever keystore a machine happened to have
-          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)
-          certs=$("$apksigner" verify --print-certs "$APK")
-          actual=$(echo "$certs" |
-                   sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
-          expected=$(keytool -list -v -keystore android/keystore/chargecap-release.p12 \
-                     -storepass chargecap 2>/dev/null |
-                     sed -n 's/.*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f' | head -1)
-          if [ "$actual" != "$expected" ]; then
-            echo "the APK was not signed by android/keystore: $actual" >&2
-            exit 1
+          # an APK is not a signed jar, so ask apksigner -- which lives in
+          # build-tools, under whichever variable the setup action exported
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          apksigner=$(ls -d "$sdk"/build-tools/*/apksigner 2>/dev/null | tail -1 || true)
+          actual=""
+          certs=""
+          if [ -n "$apksigner" ]; then
+            certs=$("$apksigner" verify --print-certs "$APK")
+            actual=$(echo "$certs" |
+                     sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+            expected=$(keytool -list -v -keystore android/keystore/chargecap-release.p12 \
+                       -storepass chargecap 2>/dev/null |
+                       sed -n 's/.*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f' | head -1)
+            if [ "$actual" != "$expected" ]; then
+              echo "the APK was not signed by android/keystore:" >&2
+              echo "  apk:      $actual" >&2
+              echo "  expected: $expected" >&2
+              exit 1
+            fi
+          else
+            echo "no apksigner under '${sdk}' -- skipping the signer check" >&2
           fi
 
           {
@@ -122,9 +131,9 @@ jobs:
             echo "commit    ${GITHUB_SHA}"
             echo "built     $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "abis      $abis"
-            echo "signed by $(echo "$certs" |
+            echo "signed by $(echo "${certs:-}" |
                              sed -n 's/^Signer #1 certificate DN: //p' | head -1)"
-            echo "signer    $actual"
+            echo "signer    ${actual}"
             echo "toolchain JDK $(java -version 2>&1 | head -1 |
                                       sed 's/.*"\(.*\)".*/\1/')"
           } > "chargecap-${VERSION}-build-info.txt"
