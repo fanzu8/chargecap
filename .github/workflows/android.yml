@@ -105,8 +105,10 @@ jobs:
           apksigner=$(ls -d "$sdk"/build-tools/*/apksigner 2>/dev/null | tail -1 || true)
           actual=""
           certs=""
+          echo "::notice title=apksigner::${apksigner:-none}"
           if [ -n "$apksigner" ]; then
-            certs=$("$apksigner" verify --print-certs "$APK")
+            certs=$("$apksigner" verify --print-certs "$APK" 2>&1 || true)
+            echo "::notice title=certs::$(printf '%s' "$certs" | head -4 | tr '\n' '|')"
             actual=$(echo "$certs" |
                      sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
             expected=$(keytool -list -v -keystore android/keystore/chargecap-release.p12 \
