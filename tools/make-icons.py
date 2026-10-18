@@ -39,7 +39,9 @@ RES = os.path.join(ROOT, "android", "app", "src", "main", "res")
 ART_BOX = (162, 330, 862, 694)
 CLEAR = 1024.0            # the SVG's canvas
 SAFE_DIAMETER = 66.0 / 108.0   # the adaptive icon's safe circle, as a fraction
-TARGET = 0.80             # how much of that circle the artwork should fill
+# as much of that circle as the artwork's own shape allows: the limit is its
+# corners, not its width, so this is where they meet the circle and no further
+TARGET = 0.88
 PLATE = "#FFFFFF"
 
 DENSITIES = {"mdpi": 1.0, "hdpi": 1.5, "xhdpi": 2.0, "xxhdpi": 3.0,

@@ -53,8 +53,7 @@ EN = {
     # window / groups
     "充电限制": "Charge limit",
     "启动": "Enable",
-    "开启后：达到上限停止充电，降到下限恢复":
-        "Stops at the upper limit, resumes at the lower",
+    "达到上限停止充电，降到下限恢复": "Stops at the upper limit, resumes at the lower",
     "上限": "Upper limit",
     "下限": "Lower limit",
     "禁止休眠": "Inhibit sleep",
@@ -828,7 +827,7 @@ class Window(Adw.ApplicationWindow):
         # rows stay as compact as the status rows below
         g_lim = Adw.PreferencesGroup(title=_("充电限制"))
         self.row_enable = Adw.SwitchRow(
-            title=_("启动"), subtitle=_("开启后：达到上限停止充电，降到下限恢复"))
+            title=_("启动"), subtitle=_("达到上限停止充电，降到下限恢复"))
         g_lim.add(self.row_enable)
         self.row_upper = Adw.SpinRow(
             title=_("上限"),

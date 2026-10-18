@@ -67,7 +67,7 @@ ANDROID_ONLY = {
 # the shared vocabulary: rename a label on one side and the other has to
 # follow, so both panels keep reading the same way
 SHARED = (
-    "充电限制", "启动", "开启后：达到上限停止充电，降到下限恢复", "上限", "下限",
+    "充电限制", "启动", "达到上限停止充电，降到下限恢复", "上限", "下限",
     "禁止休眠", "系统不休眠，保持网络在线", "指标", "窗口",
     "背景", "语言", "暗色", "亮色", "跟随系统",
     "电源", "USB类型", "电压(V)", "功率(W)", "电流", "温度(°C)",

@@ -37,8 +37,7 @@ private val EN = mapOf(
     // window / groups
     "充电限制" to "Charge limit",
     "启动" to "Enable",
-    "开启后：达到上限停止充电，降到下限恢复" to
-        "Stops at the upper limit, resumes at the lower",
+    "达到上限停止充电，降到下限恢复" to "Stops at the upper limit, resumes at the lower",
     "上限" to "Upper limit",
     "下限" to "Lower limit",
     "禁止休眠" to "Inhibit sleep",

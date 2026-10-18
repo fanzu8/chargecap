@@ -490,7 +490,7 @@ fun LimitsSection() {
             )
         }
         RowDivider()
-        SwitchRow(tr("启动"), tr("开启后：达到上限停止充电，降到下限恢复"),
+        SwitchRow(tr("启动"), tr("达到上限停止充电，降到下限恢复"),
                   checked = false, enabled = false) {}
         RowDivider()
         StepperRow(tr("上限"), "70%", enabled = false) {}
