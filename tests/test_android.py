@@ -784,7 +784,9 @@ class CiTest(SourceTest):
         # an APK is not a signed jar: the certificate comes from apksigner
         self.assertHas(self.workflow, "build-tools/*/apksigner")
         self.assertHas(self.workflow, "verify --print-certs")
-        self.assertHas(self.workflow, "Signer #1 certificate SHA-256 digest")
+        # build-tools 36 says "Signer #1 certificate ...", 37 says "V2 Signer: ...",
+        # so the parse has to match the tail of the line
+        self.assertHas(self.workflow, "certificate SHA-256 digest: ")
         self.assertLacks(self.workflow, "keytool -printcert")
         self.assertHas(read(ANDROID, "RELEASE-NOTES.md"), "debug key")
 
