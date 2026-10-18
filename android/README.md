@@ -39,13 +39,17 @@ chart keeps filling while the screen is off (until Android reclaims the process)
 | **Rated maximum current** (最大) | Android does not publish it |
 | **Health percentage** | Android gives the health *state*, never `charge_full`, so the percentage cannot be computed |
 
-The one place this port has to be clever is the **current**: Android's
-`BATTERY_PROPERTY_CURRENT_NOW` promises microamps, but some phones answer in
-milliamps (the Huawei P20 Pro this was tested on reads a 1.6 A charge as 2 mA),
-and the charge counter is quantised to whole mAh, which turns a short window into
-a staircase.  So the counter's *slope* -- the one signal whose scale is always
-the API's own -- decides which unit the HAL is answering in, and the HAL's own
-fine-grained reading is what the panel and the chart show.
+The one place this port has to be clever is the **current**.  Android promises
+that `BATTERY_PROPERTY_CURRENT_NOW` is in microamps, but it is answered in
+milliamps on some phones (the Huawei P20 Pro this was tested on reports a 0.3 A
+discharge as `-297`), and nothing in the value itself says which.  The charge
+counter's slope does: its deltas are µAh on every device, so its *magnitude*
+says which scale the HAL is using -- while its *sign* is worthless (this phone's
+counter only ever counts up, charging or discharging).  So the HAL's reading
+supplies the current and its sign, the counter supplies the unit, and the
+decision is remembered, because the counter stops moving once the battery is
+full.  The counter's 1 mAh steps also mean a reset looks like a 500 A spike, so
+an impossible slope is treated as a gauge reset rather than believed.
 
 ## Build and install
 

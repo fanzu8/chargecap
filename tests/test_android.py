@@ -353,14 +353,23 @@ class CapabilityTest(SourceTest):
         # ... and it is released with the app, never left behind
         self.assertHas(kotlin("MainActivity.kt"), "inhibitor.release()")
 
-    def test_the_current_comes_from_the_charge_counter(self):
-        """CURRENT_NOW is answered in mA on some phones where the API promises
-        microamps; the counter's slope decides the unit instead of guessing."""
+    def test_the_current_is_the_hal_reading_calibrated_by_the_counter(self):
+        """CURRENT_NOW is the only reading that carries the current's sign, but
+        its unit is only a promise (mA on this Huawei where the API says µA, so
+        a 0.3 A discharge reads as -297).  The counter's *magnitude* decides the
+        unit -- its own sign cannot be trusted: this phone's counter only ever
+        counts up -- and the decision is remembered, because the counter stops
+        moving once the battery is full."""
         battery = kotlin("Battery.kt")
-        self.assertHas(battery, "BATTERY_PROPERTY_CHARGE_COUNTER")
         self.assertHas(battery, "BATTERY_PROPERTY_CURRENT_NOW")
-        self.assertHas(battery, "currentA(reportedUa, counter, nowMs)")
-        self.assertHas(battery, "abs(asMicro - slope) <= abs(asMilli - slope)")
+        self.assertHas(battery, "BATTERY_PROPERTY_CHARGE_COUNTER")
+        self.assertHas(battery, "currentA(reported, slope)")
+        self.assertHas(battery, "abs(milli - magnitude) <= abs(micro - magnitude)")
+        self.assertHas(battery, "private var perMilli: Boolean? = null")
+        self.assertHas(battery, "perMilli == true")
+        # a counter reset is not a current
+        self.assertHas(battery, "abs(amps) > MAX_SLOPE_A")
+        self.assertHas(battery, "history.clear()")
 
     def test_the_battery_data_is_the_public_api(self):
         """No sysfs, and no hidden APIs beyond the one optional reflection for

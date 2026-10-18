@@ -32,8 +32,11 @@ read the data and draw the chart** (monitor-only mode).
      only the vendor's fixed threshold is available (Samsung "Protect battery",
      Pixel "Charging optimisation", OnePlus/Xiaomi "smart charging" ...).
      - the port also has to work around the platform's own readings: there is no
-       `charge_full`, and `BATTERY_PROPERTY_CURRENT_NOW` is answered in mA by
-       some vendors where the API promises µA (see `android/README.md`).
+       `charge_full`, `BATTERY_PROPERTY_CURRENT_NOW` is answered in mA by some
+       vendors where the API promises µA, and the charge counter's own sign is
+       worthless on those same phones (it only ever counts up, charging or
+       discharging) -- its *magnitude* is what tells the two units apart (see
+       `android/README.md`).
 
 ## Languages
 

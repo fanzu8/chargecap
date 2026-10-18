@@ -107,22 +107,29 @@ class BatteryReader(context: Context) {
     private val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
     private val designUAh: Int? = designCapacityUAh(ctx)
 
-    // The current is measured from the charge counter rather than read from
-    // BATTERY_PROPERTY_CURRENT_NOW.  Both are supposed to be µA / µAh, but the
-    // counter's *deltas* are the one thing every vendor's health HAL gets right
-    // -- current_now is answered in mA on some phones (this Huawei does), which
-    // makes a 1.6 A charge read as 2 mA.  The counter itself is quantised to
-    // about 1 mAh, so the slope is taken over a few seconds of samples instead
-    // of between two of them, which keeps the curve off a staircase.
+    // The current comes from BATTERY_PROPERTY_CURRENT_NOW -- which is the only
+    // reading that carries the current's sign -- with its unit decided by the
+    // charge counter.  Android promises µA, but a vendor's health HAL may
+    // answer in mA (this Huawei does: a 1.6 A charge reads as 1600, and 0.3 A
+    // of discharge as -297), and nothing in the reading itself says which.  The
+    // counter's *magnitude* does: its deltas are µAh on every device, and its
+    // own sign is not to be trusted at all (this phone's counter only ever
+    // counts up, whether the battery is charging or discharging).  So the slope
+    // decides the scale, the HAL reading is what is shown, and the decision is
+    // remembered -- the counter stops moving when the battery is full, but the
+    // unit a phone answers in does not change.
     private class CounterSample(val at: Long, val uah: Int)
 
     private val history = ArrayDeque<CounterSample>()
     private var estimateA: Double? = null
+    private var perMilli: Boolean? = null
 
     private companion object {
         const val SPAN_MS = 10000L    // how far back the slope reaches
         const val MIN_SPAN_MS = 3000L // ... and the least it will settle for
         const val KEEP_MS = 20000L    // samples older than this are dropped
+        const val MIN_SLOPE_A = 0.03  // below this the slope decides nothing
+        const val MAX_SLOPE_A = 20.0  // above this it is a gauge reset, not a current
     }
 
     private fun prop(id: Int): Int? =
@@ -148,27 +155,32 @@ class BatteryReader(context: Context) {
         val dt = (newest.at - reference.at) / 1000.0
         if (dt <= 0.0) return estimateA
         val ah = (newest.uah - reference.uah) / 1_000_000.0
-        estimateA = ah / (dt / 3600.0)
+        val amps = ah / (dt / 3600.0)
+        if (abs(amps) > MAX_SLOPE_A) {
+            // the counter was reset (a full charge does it): the jump is not a
+            // current, so start the window again rather than believe it
+            history.clear()
+            history.addLast(newest)
+            return null
+        }
+        estimateA = amps
         return estimateA
     }
 
     /**
-     * The current in amperes, taking the HAL's own reading when it can be
-     * trusted.
-     *
-     * The counter's slope is smooth in *scale* but coarse in time (its 1 mAh
-     * steps make a short window a staircase), while CURRENT_NOW is the opposite
-     * -- except that its unit is only a promise.  So the slope decides which
-     * unit the HAL is answering in, and the HAL's fine-grained reading is what
-     * the panel and the chart finally show.
+     * The current in amperes: the HAL's own reading -- which carries the sign
+     * -- in the unit the counter says it is in, with the counter's own slope as
+     * the fallback when there is no reading at all.
      */
-    private fun currentA(reported: Int?, counter: Int?, nowMs: Long): Double? {
-        val slope = counterCurrent(counter, nowMs)
+    private fun currentA(reported: Int?, slope: Double?): Double? {
         if (reported == null) return slope
-        if (slope == null) return reported / 1_000_000.0    // µA, as documented
-        val asMicro = reported / 1_000_000.0
-        val asMilli = reported / 1_000.0
-        return if (abs(asMicro - slope) <= abs(asMilli - slope)) asMicro else asMilli
+        val magnitude = slope?.let { abs(it) } ?: 0.0
+        if (magnitude > MIN_SLOPE_A) {
+            val micro = abs(reported) / 1_000_000.0
+            val milli = abs(reported) / 1_000.0
+            perMilli = abs(milli - magnitude) <= abs(micro - magnitude)
+        }
+        return reported / if (perMilli == true) 1_000.0 else 1_000_000.0
     }
 
     fun read(): Snapshot {
@@ -192,16 +204,18 @@ class BatteryReader(context: Context) {
         val deciC = extra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
         val status = extra(BatteryManager.EXTRA_STATUS, -1)
         val plugged = extra(BatteryManager.EXTRA_PLUGGED, 0)
-        // CURRENT_NOW is what the gauge reports; some machines only answer with
-        // the averaged value, and a few answer with neither
-        val reportedUa = prop(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+        // the HAL's own current: the one reading that carries its sign.  Some
+        // machines only answer with the averaged value, a few answer with
+        // neither, and the unit is whatever the vendor chose (see currentA)
+        val reported = prop(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
             ?: prop(BatteryManager.BATTERY_PROPERTY_CURRENT_AVERAGE)
         val counter = prop(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
+        val slope = counterCurrent(counter, nowMs)
 
         return Snapshot(
             capacity = capacity,
             voltageV = if (mv > 0) mv / 1000.0 else null,
-            currentA = currentA(reportedUa, counter, nowMs),
+            currentA = currentA(reported, slope),
             tempC = if (deciC != Int.MIN_VALUE) deciC / 10.0 else null,
             charging = status == BatteryManager.BATTERY_STATUS_CHARGING,
             plugged = plugged != 0,
