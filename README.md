@@ -34,7 +34,7 @@ Other mainline Qualcomm phones should work too as long as their charger exposes
 ## What it does
 
 - **Hysteresis**: charging stops at the **upper** limit and resumes at the
-  **lower** one; in between nothing changes. Defaults 70 / 68 (%).
+  **lower** one; in between nothing changes. Defaults 50 / 45 (%).
 - **Master switch**: with it off, charging is left completely alone
   (a non-zero input current limit is still applied).
 - **USB input current limit**: `limit` is writable, `max` is the rated value it
@@ -91,7 +91,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 CI builds the APK on every change and attaches it to a release when a version
-tag is pushed, named `chargecap-<version>-universal-debug.apk` (see
+tag is pushed, named `chargecap-<version>-universal.apk` (see
 [`android/README.md`](android/README.md#releases)).
 
 ## Install

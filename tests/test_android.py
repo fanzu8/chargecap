@@ -347,6 +347,17 @@ class CapabilityTest(SourceTest):
         self.assertHas(limits, 'KeyChip(tr("未 root"), AMBER', "LimitsSection")
         self.assertHas(limits, 'tr("只能提供状态")', "LimitsSection")
 
+    def test_the_hints_close_themselves(self):
+        """A ⓘ covers the row it explains, so it goes away on its own instead
+        of waiting to be dismissed (the GTK app's ⓘ does the same)."""
+        panel = kotlin("Panel.kt")
+        self.assertHas(panel, "private const val HINT_MS = 2000L")
+        self.assertHas(panel, "LaunchedEffect(open)")
+        self.assertHas(panel, "delay(HINT_MS)")
+        gui = read(ROOT, "chargecap")
+        self.assertHas(gui, "HINT_MS = 2000")
+        self.assertHas(gui, 'pop.connect("map", lambda *_: GLib.timeout_add(HINT_MS, pop.popdown))')
+
     def test_the_input_current_limit_is_not_writable(self):
         """`限制` is drawn as an empty, inert box: without root there is no
         sysfs node to write a limit to."""
@@ -644,19 +655,20 @@ class CiTest(SourceTest):
 
     def test_a_tag_has_to_match_the_version_the_build_declares(self):
         self.assertHas(self.workflow, '"${GITHUB_REF_NAME}" != "v${VERSION}"')
-        version = re.search(r'versionName = "([^"]+)"',
+        version = re.search(r'val appVersion = "([^"]+)"',
                             read(ANDROID, "app", "build.gradle.kts")).group(1)
         self.assertRegex(version, r"^\d+\.\d+\.\d+$",
                          "a version the v-prefixed tag can be compared with")
 
     def test_the_release_files_are_named_as_the_readme_says(self):
         self.assertHas(self.workflow,
-                       'apk="chargecap-${VERSION}-universal-debug.apk"')
+                       "apk=chargecap-${VERSION}-universal-debug.apk")
         self.assertHas(self.workflow, "SHA256SUMS")
         self.assertHas(self.workflow, 'chargecap-${VERSION}-build-info.txt')
         readme = read(ANDROID, "README.md")
+        self.assertHas(readme, "chargecap-0.0.1-universal.apk")
         self.assertHas(readme, "chargecap-0.0.1-universal-debug.apk")
-        self.assertHas(readme, "<name>-<version>-<abi>-<variant>.apk")
+        self.assertHas(readme, "chargecap-<version>-<abi>-<variant>.apk")
 
     def test_the_build_info_says_who_signed_it(self):
         """Two copies install over each other only when the same key signed
@@ -672,6 +684,44 @@ class CiTest(SourceTest):
         notes = read(ANDROID, "RELEASE-NOTES.md")
         self.assertHas(notes, "Android 7.0")
         self.assertHas(notes, "WAKE_LOCK")
+
+    def test_the_release_is_signed_with_the_key_in_the_repository(self):
+        """The keystore is committed on purpose (see keystore/README.md), and
+        the release build type has to use it -- that is what lets a CI build and
+        a local build install over each other."""
+        gradle = read(ANDROID, "app", "build.gradle.kts")
+        self.assertHas(gradle, "signingConfigs {")
+        self.assertHas(gradle, 'rootProject.file("keystore/chargecap-release.p12")')
+        self.assertHas(gradle, "signingConfig = signingConfigs.getByName(\"release\")")
+        # ... and a release is the minified, non-debuggable one
+        self.assertHas(gradle, "isMinifyEnabled = true")
+        self.assertHas(gradle, "isShrinkResources = true")
+        self.assertTrue(os.path.exists(os.path.join(
+            ANDROID, "keystore", "chargecap-release.p12")))
+        self.assertTrue(os.path.exists(os.path.join(
+            ANDROID, "app", "proguard-rules.pro")))
+        # CI refuses to ship a build signed by something else
+        self.assertHas(self.workflow, "apksigner verify --print-certs")
+        self.assertHas(self.workflow, "the APK was not signed by android/keystore")
+
+    def test_the_release_drops_the_variant_from_its_name(self):
+        """chargecap-<version>-<abi>-<variant>.apk: the release has no variant
+        because it is the plain one; a debug build says so."""
+        self.assertHas(self.workflow,
+                       'apk=chargecap-${VERSION}-universal.apk')
+        self.assertHas(self.workflow,
+                       'apk=chargecap-${VERSION}-universal-debug.apk')
+        self.assertHas(self.workflow, "GITHUB_REF_TYPE")
+
+    def test_the_version_is_declared_once(self):
+        """The tag, the file name and the APK's versionName all come from
+        `appVersion`, and the versionCode is derived from it -- one number to
+        bump, and nothing to forget."""
+        gradle = read(ANDROID, "app", "build.gradle.kts")
+        self.assertHas(gradle, 'val appVersion = "0.0.1"')
+        self.assertHas(gradle, "versionCode = versionCodeOf(appVersion)")
+        self.assertHas(gradle, "versionName = appVersion")
+        self.assertHas(self.workflow, "appVersion")
 
     def test_ci_runs_the_suite_before_releasing(self):
         self.assertHas(self.workflow, "python3 -m unittest")

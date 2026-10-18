@@ -6,6 +6,16 @@
 
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+// The project's version, and the tag it ships as: CI refuses to release a v*
+// tag that does not match this string.
+val appVersion = "0.0.1"
+
+/** 0.0.1 -> 1, 1.2.3 -> 10203: the number Android orders upgrades by, derived. */
+fun versionCodeOf(version: String): Int {
+    val (major, minor, patch) = version.split(".").map { it.toInt() }
+    return major * 10000 + minor * 100 + patch
+}
+
 plugins {
     id("com.android.application")
     // no kotlin-android: AGP 9 has built-in Kotlin support, and the old plugin
@@ -21,15 +31,34 @@ android {
         applicationId = "org.chargecap.android"
         minSdk = 24
         targetSdk = 36
-        // the project's version, and the tag it ships as: CI refuses to release
-        // a v* tag that does not match this string
-        versionCode = 1
-        versionName = "0.0.1"
+        versionCode = versionCodeOf(appVersion)
+        versionName = appVersion
+    }
+
+    signingConfigs {
+        // The release key is here on purpose: the app is only ever sideloaded,
+        // and a key in the open is what lets a build made here and a build made
+        // by CI install over each other.  See keystore/README.md -- it also says
+        // why the key must never be rotated.
+        create("release") {
+            storeFile = rootProject.file("keystore/chargecap-release.p12")
+            storePassword = "chargecap"
+            keyAlias = "chargecap"
+            keyPassword = "chargecap"
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+            // a release should be the small, non-debuggable one, and it is what
+            // the download is named after (no "-debug" in the file name)
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 

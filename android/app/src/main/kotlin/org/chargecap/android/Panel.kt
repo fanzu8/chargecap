@@ -38,6 +38,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 
 // The panel: the status table, the limits and the chart controls, laid out like
 // the GTK app's PreferencesPage -- the same rows, the same inline key chips,
@@ -61,6 +63,7 @@ import androidx.compose.ui.unit.sp
 
 private val TITLE_W = 68.dp          // the title gutter of the status table
 private val DISABLED = 0.38f         // Material's disabled alpha
+private const val HINT_MS = 2000L    // how long a ⓘ hint stays up
 private val AMBER = Color(0xFFE5A50A)    // the GTK app's "off" colour
 private val GREEN = Color(0xFF2EC27E)    // ... and its "on" colour
 
@@ -202,6 +205,14 @@ private fun ChargedValue(text: String, on: Boolean, modifier: Modifier = Modifie
 @Composable
 private fun InfoButton(title: String, body: String) {
     var open by remember { mutableStateOf(false) }
+    // a hint, not a menu: it goes away on its own, so a tapped ⓘ never sits
+    // there covering the row it explains
+    LaunchedEffect(open) {
+        if (open) {
+            delay(HINT_MS)
+            open = false
+        }
+    }
     Box {
         TextButton(
             onClick = { open = true },
@@ -493,9 +504,9 @@ fun LimitsSection() {
         SwitchRow(tr("启动"), tr("达到上限停止充电，降到下限恢复"),
                   checked = false, enabled = false) {}
         RowDivider()
-        StepperRow(tr("上限"), "70%", enabled = false) {}
+        StepperRow(tr("上限"), "50%", enabled = false) {}
         RowDivider()
-        StepperRow(tr("下限"), "68%", enabled = false) {}
+        StepperRow(tr("下限"), "45%", enabled = false) {}
     }
 }
 

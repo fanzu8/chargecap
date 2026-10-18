@@ -77,8 +77,8 @@ DEFAULT = {
     # a fresh install does nothing to the system until it is switched on:
     # no charge limit, no USB input current limit, no sleep inhibition
     "limit_enabled": False,
-    "upper": 70,
-    "lower": 68,
+    "upper": 50,
+    "lower": 45,
     "inhibit_sleep": False,       # global: hold the sleep block whenever on
     "current_limit": 0,           # USB input limit (mA); 0 = no limit (rated max)
 }
@@ -202,8 +202,8 @@ def load_config(path):
         log(f"config load error: {e}")
     cfg["limit_enabled"] = bool(cfg["limit_enabled"])
     cfg["inhibit_sleep"] = bool(cfg["inhibit_sleep"])
-    cfg["upper"] = clampi(cfg["upper"], 5, 100, 70)
-    cfg["lower"] = clampi(cfg["lower"], 5, 100, 68)
+    cfg["upper"] = clampi(cfg["upper"], 5, 100, 50)
+    cfg["lower"] = clampi(cfg["lower"], 5, 100, 45)
     cfg["current_limit"] = clampi(cfg["current_limit"], 0, 3000, 0)
     if cfg["lower"] > cfg["upper"] - 2:
         cfg["lower"] = max(5, cfg["upper"] - 2)

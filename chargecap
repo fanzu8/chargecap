@@ -246,6 +246,10 @@ BAT, CHG = _detected()
 # confirm it (the daemon polls every 3 s).  Prevents the "revert then update"
 # flicker when a control is touched.
 PENDING_TTL = 4.0
+# How long a ⓘ hint stays up: it explains a row, it is not a menu, so it goes
+# away on its own (both apps do this).
+HINT_MS = 2000
+
 # minimum gap enforced between upper and lower in the UI.
 # 2 keeps a 1% hysteresis band: stop at upper, resume at lower, hold in between.
 MIN_GAP = 2
@@ -831,10 +835,10 @@ class Window(Adw.ApplicationWindow):
         g_lim.add(self.row_enable)
         self.row_upper = Adw.SpinRow(
             title=_("上限"),
-            adjustment=Gtk.Adjustment(value=70, lower=5, upper=100, step_increment=1))
+            adjustment=Gtk.Adjustment(value=50, lower=5, upper=100, step_increment=1))
         self.row_lower = Adw.SpinRow(
             title=_("下限"),
-            adjustment=Gtk.Adjustment(value=68, lower=5, upper=100, step_increment=1))
+            adjustment=Gtk.Adjustment(value=45, lower=5, upper=100, step_increment=1))
         g_lim.add(self.row_upper)
         g_lim.add(self.row_lower)
         for row in (self.row_enable, self.row_upper, self.row_lower):
@@ -978,6 +982,9 @@ class Window(Adw.ApplicationWindow):
         tip.set_margin_bottom(10)
         pop = Gtk.Popover()
         pop.set_child(tip)
+        # it says what SDP / DCP / CDP mean and then gets out of the way
+        pop.connect("map", lambda *_: GLib.timeout_add(HINT_MS, pop.popdown))
+        self._info_pop = pop
         help_btn.set_popover(pop)
         info_row(((_("USB类型"), "usb_type", None, help_btn),
                   (_("温度(°C)"), "temp_c", "temp_c")))
@@ -1488,8 +1495,8 @@ class Window(Adw.ApplicationWindow):
                     self._pending = None
             if self._pending is None:
                 self.row_enable.set_active(bool(s.get("limit_enabled", True)))
-                self.row_upper.set_value(s.get("upper", 70))
-                self.row_lower.set_value(s.get("lower", 68))
+                self.row_upper.set_value(s.get("upper", 50))
+                self.row_lower.set_value(s.get("lower", 45))
                 self.row_inhibit.set_active(bool(s.get("inhibit_sleep", True)))
                 lim = s.get("current_limit")
                 if lim:

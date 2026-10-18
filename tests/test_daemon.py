@@ -259,7 +259,7 @@ class DaemonTest(unittest.TestCase):
         self.assertFalse(cfg["limit_enabled"])
         self.assertFalse(cfg["inhibit_sleep"])
         self.assertEqual(cfg["current_limit"], 0)
-        self.assertEqual((cfg["upper"], cfg["lower"]), (70, 68))
+        self.assertEqual((cfg["upper"], cfg["lower"]), (50, 45))
 
     def test_config_is_clamped(self):
         path = os.path.join(self.tmp, "config.json")

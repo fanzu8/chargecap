@@ -95,26 +95,30 @@ on a `v*` tag it attaches the result to a GitHub release.  A tag has to match th
 `versionName` the build declares (`v0.0.1` needs `versionName = "0.0.1"`), so a
 download can always be traced back to the commit it came from.
 
-One file per release, named after what it is:
+One file per release, named after what it is --
+`chargecap-<version>-<abi>-<variant>.apk`:
 
 | | |
 |---|---|
-| `chargecap-0.0.1-universal-debug.apk` | `<name>-<version>-<abi>-<variant>.apk` |
+| `chargecap-0.0.1-universal.apk` | the release: signed with the key in `keystore/`, minified, not debuggable |
+| `chargecap-0.0.1-universal-debug.apk` | what a branch or PR build produces (attached to the run, never released) |
 | `SHA256SUMS` | the APK's hash, for `sha256sum -c` |
 | `chargecap-0.0.1-build-info.txt` | tag, commit, build time, ABIs, toolchain, and **who signed it** |
 
 - `<version>` is the tag without its `v` (the tag carries the `v`, the file does
   not), so the file name and the release agree.
 - `<abi>` says which ABIs are inside: `universal` means all of them in one file,
-  which leaves room for `arm64-v8a` and friends if the APK is ever split.
-- `<variant>` is `debug` because that is what it is signed with; a store-style
-  release would drop it.
-- The signer fingerprint is in the build info on purpose: the APKs are signed
-  with the debug key of the machine that built them, so two copies cannot be
-  installed over each other unless the same key signed both.
+  which leaves room for `arm64-v8a` and friends if the APK is ever split.  (It is
+  not worth splitting here: the four `libandroidx.graphics.path.so` together are
+  36 KB of a 3.4 MB download -- the weight is the Compose runtime.)
+- `<variant>` is dropped for the release and `debug` when it really is one, so
+  the name never claims to be something it is not.
 
-An APK built here and one built by CI therefore install over each other only by
-luck; uninstall when switching.
+The release is signed with the key committed in `keystore/`, which is what lets
+a build made on any machine and a build made by CI install over each other; the
+same file explains why that key must never be rotated.  The build info repeats
+the signer's fingerprint, and CI fails the build if the APK it produced was
+signed by anything else.
 
 ## Development
 

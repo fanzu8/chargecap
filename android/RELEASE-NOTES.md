@@ -23,12 +23,23 @@ adb install -r chargecap-0.0.1-universal-debug.apk
 
 ## Signing
 
-These APKs are signed with the **debug key of the machine that built them** --
-no keystore is kept in the repository, so a release built by CI and a build made
-by hand on someone's laptop carry *different* signatures.  Android refuses to
-install one over the other: uninstall first when switching between them (and
-expect that whenever the key changes, which is also why the build info lists the
-signer's fingerprint -- it is what tells two copies apart).
+Releases are signed with `android/keystore/chargecap-release.p12`, which is **in
+the repository** (with its passwords) on purpose: this app is only ever
+sideloaded, and a key in the open is what lets a build made by CI and a build
+made by anyone else install over each other.
+
+```
+SHA-256  1D:A5:E1:59:E8:ED:56:94:3D:DD:5A:C9:75:5B:CE:E5:EA:0C:CA:15:63:ED:8E:39:7A:7D:E2:76:DD:D0:F5:05
+DN       CN=chargecap, O=chargecap, C=CN
+```
+
+The build info repeats that fingerprint, so it is what to check before
+installing an upgrade from anywhere but this repository -- a different key
+cannot be installed over an existing copy (Android refuses it outright).
+
+Debug builds (what a branch or PR run produces) are signed with the debug key of
+the machine that built them instead, so they cannot be installed over a release
+or over each other: uninstall first when switching between the two kinds.
 
 ## What it can and cannot do without root
 
