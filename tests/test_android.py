@@ -359,11 +359,22 @@ class ChartTest(SourceTest):
         self.assertHas(panel, "raised = true,")
         self.assertHas(panel, "shadow: Dp = 0.dp,")
         self.assertHas(panel, "raised: Boolean = false,")
-        # a candidate row is one line, not Material's 48dp touch target
-        self.assertHas(panel, "private fun MenuRow(")
-        self.assertLacks(panel, "DropdownMenuItem(")
-        self.assertHas(read(ROOT, "chargecap"),
-                       "dropdown popover listview > row { min-height: 0px; padding: 0px; }")
+        # a candidate row is Material's own item, at the height Material gives
+        # it: a hand-rolled one-line row was tried and came out too tight
+        self.assertHas(panel, "DropdownMenuItem(")
+        self.assertLacks(panel, "private fun MenuRow(")
+        # both lists in the GTK app are the same popover of ticked choices
+        gtk = read(ROOT, "chargecap")
+        self.assertHas(gtk, "def choice_popover(items, current, on_pick, max_height=0):")
+        self.assertHas(gtk, "pop = choice_popover(SAMPLES, SAMPLE_MS_CHOICE, self._on_sample,")
+        self.assertHas(gtk, "[(label, secs) for label, secs in WINDOWS],")
+        # no radio circles left, and no stock dropdown either
+        self.assertLacks(gtk, "Gtk.CheckButton(label=label)")
+        self.assertLacks(gtk, "Gtk.DropDown.new_from_strings(")
+        # a choice is one line in a row the height of the checkbutton it replaced
+        self.assertHas(gtk, "popover button.choice {")
+        self.assertHas(gtk, "min-height: 28px; min-width: 0px; padding: 0px 6px; margin: 0px;")
+        self.assertHas(gtk, 'label=("\\u2713 " if value == current else "   ") + label')
         self.assertHas(panel, "KeyChip(title, null, s.heading)")
         self.assertHas(panel, "alpha = if (raised) 0.16f else 0.10f")
         self.assertHas(panel, ".shadow(shadow, shape)")

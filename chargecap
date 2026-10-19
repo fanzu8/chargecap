@@ -340,16 +340,14 @@ row.switch-row.compact-status label.title {
     padding: 1px 6px; border-radius: 8px;
     background-color: alpha(@window_fg_color, 0.10);
 }
-/* the candidates a dropdown offers: one line of text, without Adwaita's list
-   padding -- asked for, though it is below the theme's touch target */
-dropdown popover listview > row { min-height: 0px; padding: 0px; }
-dropdown popover listview > row > box { padding: 0px; margin: 0px; }
-popover checkbutton { min-height: 0px; padding: 0px; }
-popover checkbutton > box { padding: 0px; margin: 0px; }
-popover checkbutton > check,
-popover checkbutton image,
-popover checkbutton label { min-height: 0px; min-width: 0px; padding: 0px;
-                            margin: 0px; }
+/* a candidate in a dropdown: one line of text, no radio circle, no button
+   box.  Unstyled it is a flat button, which Adwaita gives 32px and padding;
+   a stock checkbutton row was 28px, and that is the height to keep. */
+popover button.choice {
+    min-height: 28px; min-width: 0px; padding: 0px 6px; margin: 0px;
+    border: 0px; box-shadow: none; background: none;
+}
+popover button.choice label { min-height: 0px; padding: 0px; }
 /* the sampling caption is the same key chip as USB类型's, and raised */
 row.power-row.compact-status label.sample-caption {
     padding: 1px 6px; border-radius: 8px;
@@ -481,6 +479,37 @@ def hug_title(row, also_subtitle=False):
             walk(child)
             child = child.get_next_sibling()
     walk(row)
+
+
+def choice_popover(items, current, on_pick, max_height=0):
+    """A popover listing one-line choices, the chosen one ticked.
+
+    Both apps list a choice this way.  These lists were groups of radio buttons
+    while the chart window was a stock Gtk.DropDown, so the two dropdowns on one
+    row disagreed: one drew a circle beside every candidate and the other drew
+    none.  The circle is also a column of ink the panel has no room for.
+    """
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    for label, value in items:
+        btn = Gtk.Button()
+        btn.add_css_class("flat")
+        btn.add_css_class("choice")
+        text = Gtk.Label(label=("\u2713 " if value == current else "   ") + label)
+        text.set_xalign(0.0)
+        btn.set_child(text)
+        btn.connect("clicked", on_pick, value)
+        box.append(btn)
+    pop = Gtk.Popover()
+    if max_height:
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_max_content_height(max_height)
+        scroller.set_propagate_natural_height(True)
+        scroller.set_child(box)
+        pop.set_child(scroller)
+    else:
+        pop.set_child(box)
+    return pop
 
 
 # ---- chart: the selectable metrics.  Each one has its own colour (the same
@@ -1194,14 +1223,7 @@ class Window(Adw.ApplicationWindow):
         ctl.append(spacer)
         wlabel = Gtk.Label(label=_("窗口"))
         ctl.append(wlabel)
-        self.dd_window = Gtk.DropDown.new_from_strings(
-            strings=[w[0] for w in WINDOWS])
-        self.dd_window.set_valign(Gtk.Align.CENTER)
-        self.dd_window.set_selected(
-            next(i for i, w in enumerate(WINDOWS)
-                 if w[1] == self.chart.window_secs))
-        self.dd_window.connect("notify::selected", self._on_window_changed)
-        ctl.append(self.dd_window)
+        ctl.append(self._window_button())
         row_ctl.set_child(ctl)
         g_chart.add(row_ctl)
 
@@ -1505,32 +1527,16 @@ class Window(Adw.ApplicationWindow):
         btn.set_child(self._sample_label)
         btn.set_tooltip_text(_("采样间隔"))
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        group = None
-        for label, ms in SAMPLES:
-            item = Gtk.CheckButton(label=label)
-            item.set_active(ms == SAMPLE_MS_CHOICE)
-            if group is None:
-                group = item
-            else:
-                item.set_group(group)
-            item.connect("toggled", self._on_sample, ms)
-            box.append(item)
-        scroller = Gtk.ScrolledWindow()
-        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.set_max_content_height(420)
-        scroller.set_propagate_natural_height(True)
-        scroller.set_child(box)
-        pop = Gtk.Popover()
-        pop.set_child(scroller)
+        pop = choice_popover(SAMPLES, SAMPLE_MS_CHOICE, self._on_sample,
+                             max_height=420)
         self._sample_pop = pop
         btn.set_popover(pop)
         return btn
 
-    def _on_sample(self, item, want):
+    def _on_sample(self, _btn, want):
         """The recording interval changed: remember it and wake up at its pace."""
         global SAMPLE_MS_CHOICE
-        if not item.get_active() or want not in [ms for _l, ms in SAMPLES]:
+        if want not in [ms for _l, ms in SAMPLES]:
             return
         self._sample_pop.popdown()
         SAMPLE_MS_CHOICE = want
@@ -1564,26 +1570,17 @@ class Window(Adw.ApplicationWindow):
         btn.set_child(self._bg_label)
         btn.set_tooltip_text(_("背景"))
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        group = None
-        for value, label in (("dark", _("暗色")), ("light", _("亮色")),
-                             ("auto", _("跟随系统"))):
-            item = Gtk.CheckButton(label=label)
-            item.set_active(value == SCHEME_CHOICE)
-            if group is None:
-                group = item
-            else:
-                item.set_group(group)
-            item.connect("toggled", self._on_background, value)
-            box.append(item)
-        pop = Gtk.Popover()
-        pop.set_child(box)
+        pop = choice_popover(
+            [(label, value) for value, label in
+             (("dark", _("暗色")), ("light", _("亮色")),
+              ("auto", _("跟随系统")))],
+            SCHEME_CHOICE, self._on_background)
         self._bg_pop = pop
         btn.set_popover(pop)
         return btn
 
-    def _on_background(self, item, want):
-        if not item.get_active() or want not in SCHEMES:
+    def _on_background(self, _btn, want):
+        if want not in SCHEMES:
             return
         self._bg_pop.popdown()
         d = load_ui()
@@ -1606,27 +1603,15 @@ class Window(Adw.ApplicationWindow):
         btn.set_child(self._lang_label)
         btn.set_tooltip_text(_("语言"))
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        group = None
-        for value, label in (("auto", _("跟随系统")), ("zh", "中文"),
-                             ("en", "English")):
-            item = Gtk.CheckButton(label=label)
-            item.set_active(value == LANGUAGE_CHOICE)
-            if group is None:
-                group = item
-            else:
-                item.set_group(group)
-            item.connect("toggled", self._on_language, value)
-            box.append(item)
-        pop = Gtk.Popover()
-        pop.set_child(box)
+        pop = choice_popover(
+            [(label, value) for value, label in
+             (("auto", _("跟随系统")), ("zh", "中文"), ("en", "English"))],
+            LANGUAGE_CHOICE, self._on_language)
         self._lang_pop = pop
         btn.set_popover(pop)
         return btn
 
-    def _on_language(self, item, want):
-        if not item.get_active():
-            return
+    def _on_language(self, _btn, want):
         self._lang_pop.popdown()
         d = load_ui()
         if want == "auto":
@@ -1655,6 +1640,44 @@ class Window(Adw.ApplicationWindow):
             pass
         self.get_application().quit()
 
+    def _window_button(self):
+        """The chart window: a chip carrying the value, exactly like 采样间隔's.
+
+        It was a stock Gtk.DropDown, whose popup lists its candidates as plain
+        rows -- no tick, and no way in to restyle them.  Same chip, same list,
+        same one line per candidate as the recording interval.
+        """
+        btn = Gtk.MenuButton()
+        btn.add_css_class("flat")
+        btn.add_css_class("lang-btn")
+        self._window_label = Gtk.Label(label=self._window_text())
+        self._window_label.add_css_class("sample-value")
+        btn.set_child(self._window_label)
+        btn.set_tooltip_text(_("窗口"))
+
+        pop = choice_popover(
+            [(label, secs) for label, secs in WINDOWS],
+            self.chart.window_secs, self._on_window_picked)
+        self._window_pop = pop
+        btn.set_popover(pop)
+        return btn
+
+    def _window_text(self):
+        for label, secs in WINDOWS:
+            if secs == self.chart.window_secs:
+                return label + "  \u25be"
+        return WINDOWS[0][0] + "  \u25be"
+
+    def _on_window_picked(self, _btn, secs):
+        """The chart window changed: redraw it and remember the choice."""
+        if secs not in [w[1] for w in WINDOWS]:
+            return
+        self._window_pop.popdown()
+        self.chart.window_secs = secs
+        self._window_label.set_text(self._window_text())
+        self.chart.queue_draw()
+        self._save_ui()
+
     def _on_metric_toggled(self, btn, key):
         if btn.get_active() and key not in self.chart.selected:
             # keep METRICS order so the Y axes never jump around
@@ -1664,13 +1687,6 @@ class Window(Adw.ApplicationWindow):
             self.chart.selected.remove(key)
         self.chart.queue_draw()
         self._save_ui()
-
-    def _on_window_changed(self, row, _param):
-        idx = row.get_selected()
-        if 0 <= idx < len(WINDOWS):
-            self.chart.window_secs = WINDOWS[idx][1]
-            self.chart.queue_draw()
-            self._save_ui()
 
     # ---- daemon/battery -> UI ----
     def refresh(self):
