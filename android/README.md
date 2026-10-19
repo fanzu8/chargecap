@@ -2,39 +2,10 @@
 
 <img src="../icons/org.postmarketos.Chargecap.svg" width="88" alt="chargecap">
 
-**English** · the GTK app's *monitoring* half, as a Kotlin + Jetpack Compose app.
-
-The GTK app controls charging by asking a **root daemon** to write the charger's
-`/sys/class/power_supply/…` nodes.  On Android those nodes are denied to apps by
-SELinux, and there is no daemon to ask, so an unrooted phone can only be *read*.
-This port keeps everything that can be read, in the same layout, with the same
-charts and the same words as the GTK app -- and shows the controls it cannot use,
-greyed out, with the reason next to them.
-
-## What it does
-
-- **Status panel**: charge %, plugged / charging state, charger type (AC / USB /
-  wireless / dock), temperature, voltage, power, current with this session's
-  range, and what the gauge reports against the design capacity plus the
-  platform's health state.  Refreshes twice a second.
-- **Chart**: overlay any of voltage / current / power / temperature / charge as
-  metrics, over a window from 15 seconds to 48 hours, with the GTK app's colours,
-  axis sides, tick formats and time labels.
-- **Inhibit sleep** (禁止休眠): the Android equivalent of the daemon's
-  `systemd-inhibit` -- a partial wake lock, held while the switch is on, so the
-  device does not suspend and the network stays up.  This one *does* work here.
-- **Dark by default** (as the GTK app is now), with a background switch in the
-  header -- dark / light / follow the system -- next to the language one.
-- **Follows the system language** (Chinese / English), switchable from the
-  header; the metrics, window, background and language are remembered.
-
-The panel is a stack of boxed sections (充电限制, 禁止休眠, the status table,
-指标), the way the GTK app's page is a stack of `Adw.PreferencesGroup`s, so each
-part has a boundary and a title of its own.
-
-The sample history lives in memory only and holds 48 hours at 2 Hz, exactly like
-the GTK app's arrays.  Sampling runs in the process rather than in the UI, so the
-chart keeps filling while the screen is off (until Android reclaims the process).
+The GTK app's **monitoring half**, in Kotlin + Jetpack Compose: same panel, same
+chart, same words.  The GTK app controls charging by having a **root daemon**
+write the charger's nodes; SELinux denies those to apps and Android has no daemon
+to ask, so an unrooted phone can only be read.
 
 ## What it cannot do
 
@@ -45,33 +16,35 @@ chart keeps filling while the screen is off (until Android reclaims the process)
 | **Rated maximum current** (最大) | Android does not publish it |
 | **Health percentage** | Android gives the health *state*, never `charge_full`, so the percentage cannot be computed |
 
-The mAh row is the one place the numbers need a note, so it carries a ⓘ: the
-first of the two is the gauge's own coulomb counter -- charge that has flowed
-through it, *not* what is left.  On the P20 Pro it resets when the battery
-reaches full (1,546,000 µAh became 4,000 in one step) and its absolute value
-never matched the percentage anyway, so `54/4000` must not be read as 1.35%.
-The counter's *rate* is trustworthy, and it is what calibrates the current
-below.
+禁止休眠 *does* work: it is a partial wake lock where the daemon holds a
+`systemd-inhibit`.  Everything else that can be read is read, including the
+chart -- samples in memory only, 48 hours at 2 Hz, taken off the UI thread so it
+keeps filling while the screen is off (until Android reclaims the process).
 
-Its ⓘ next to 健康度 says the same kind of thing, because the GTK app's health
-figure means something this platform does not offer: there it is a wear
-percentage (`charge_full / charge_full_design`), here it is the state the
-system reports (良好 / 过热 / ...).  The notes are the Android app's own
-wherever the two platforms differ -- 禁止休眠 holds a wake lock rather than a
-logind sleep block, the charger type is the port (AC / USB / wireless / dock)
-rather than SDP / DCP / CDP.
+The notes behind the ⓘs are the app's own wherever the platforms differ: the
+charger type is the port (AC / USB / wireless / dock) rather than
+SDP / DCP / CDP, and 健康度 is the state the system reports (良好 / 过热 / ...)
+rather than the GTK app's wear percentage (`charge_full / charge_full_design`).
 
-The one place this port has to be clever is the **current**.  Android promises
-that `BATTERY_PROPERTY_CURRENT_NOW` is in microamps, but it is answered in
-milliamps on some phones (the Huawei P20 Pro this was tested on reports a 0.3 A
-discharge as `-297`), and nothing in the value itself says which.  The charge
-counter's slope does: its deltas are µAh on every device, so its *magnitude*
-says which scale the HAL is using -- while its *sign* is worthless (this phone's
-counter only ever counts up, charging or discharging).  So the HAL's reading
-supplies the current and its sign, the counter supplies the unit, and the
-decision is remembered, because the counter stops moving once the battery is
-full.  The counter's 1 mAh steps also mean a reset looks like a 500 A spike, so
-an impossible slope is treated as a gauge reset rather than believed.
+The mAh row is the one place the numbers need that note: the first of the two is
+the gauge's coulomb counter -- charge that has flowed through it, *not* what is
+left.  On the P20 Pro it resets when the battery reaches full (1,546,000 µAh
+became 4,000 in one step) and its absolute value never matched the percentage
+anyway, so `54/4000` must not be read as 1.35%.  Its *rate* is trustworthy, and
+that is what calibrates the current.
+
+## The current
+
+Android promises `BATTERY_PROPERTY_CURRENT_NOW` in microamps but answers in
+milliamps on some phones (the P20 Pro this was tested on reports a 0.3 A
+discharge as `-297`), and the value itself does not say which.  The charge
+counter's slope does: its deltas are µAh on every device, so its *magnitude* says
+which scale the HAL is using -- while its *sign* is worthless (this phone's
+counter only ever counts up, charging or discharging).  So the HAL supplies the
+current and its sign, the counter supplies the unit, and the answer is
+remembered, because the counter stops moving once the battery is full.  Its 1 mAh
+steps also mean a reset looks like a 500 A spike, so an impossible slope is
+treated as a gauge reset rather than believed.
 
 ## Build and install
 
@@ -81,22 +54,22 @@ cd android
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-The app is `org.chargecap.android`, needs only `WAKE_LOCK`, and runs on Android
-7.0 (API 24) and up; it was written and tested on Android 9 (EMUI 9.1).
-
-Built with the Android Gradle plugin 9.0.1 (which compiles Kotlin itself -- the
-old `kotlin-android` plugin is not applied), Kotlin 2.3.20 and Compose BOM
-2026.03.01.
+`org.chargecap.android`, Android 7.0 (API 24) and up, its only permission
+`WAKE_LOCK`; written and tested on Android 9 (EMUI 9.1).  Built with AGP 9.0.1
+(which compiles Kotlin itself -- `kotlin-android` is not applied), Kotlin 2.3.20
+and Compose BOM 2026.03.01.
 
 ## Releases
 
-CI (`.github/workflows/android.yml`) builds the APK on every change to it, and
-on a `v*` tag it attaches the result to a GitHub release.  A tag has to match the
-`versionName` the build declares (`v0.0.1` needs `versionName = "0.0.1"`), so a
-download can always be traced back to the commit it came from.
+CI (`.github/workflows/android.yml`) builds the APK on every change to it, and on
+a `v*` tag attaches the result to a release.  A tag has to match the version the
+build declares (`v0.0.1` needs `appVersion = "0.0.1"`), so a download can always
+be traced back to its commit.
 
-One file per release, named after what it is --
-`chargecap-<version>-<abi>-<variant>.apk`:
+One file per release, `chargecap-<version>-<abi>-<variant>.apk`: `<version>` is
+the tag without its `v`, `<abi>` is `universal` -- all four in one file, since
+splitting them would save 36 KB of a 3.4 MB download -- and `<variant>` is
+dropped for the release and `debug` when it really is one.
 
 | | |
 |---|---|
@@ -105,28 +78,17 @@ One file per release, named after what it is --
 | `SHA256SUMS` | the APK's hash, for `sha256sum -c` |
 | `chargecap-0.0.1-build-info.txt` | tag, commit, build time, ABIs, toolchain, and **who signed it** |
 
-- `<version>` is the tag without its `v` (the tag carries the `v`, the file does
-  not), so the file name and the release agree.
-- `<abi>` says which ABIs are inside: `universal` means all of them in one file,
-  which leaves room for `arm64-v8a` and friends if the APK is ever split.  (It is
-  not worth splitting here: the four `libandroidx.graphics.path.so` together are
-  36 KB of a 3.4 MB download -- the weight is the Compose runtime.)
-- `<variant>` is dropped for the release and `debug` when it really is one, so
-  the name never claims to be something it is not.
-
-The release is signed with the key committed in `keystore/`, which is what lets
-a build made on any machine and a build made by CI install over each other; the
-same file explains why that key must never be rotated.  The build info repeats
-the signer's fingerprint, and CI fails the build if the APK it produced was
-signed by anything else.
+The release is signed with the key committed in `keystore/`, which is what lets a
+build made on any machine and a build made by CI install over each other; that
+key must never be rotated.  The build info repeats the signer's fingerprint, and
+CI fails the build if the APK it produced was signed by anything else.
 
 ## Development
 
-The Kotlin sources are held to the GTK app by `tests/test_android.py`, which
-reads them the same way `tests/test_gui.py` reads the GTK source: the metric
-table, the window list, the type scale, the tick formats, the colours and every
-translated string have to match, and the two apps' strings have to keep saying
-the same thing in the same words.
+`tests/test_android.py` holds the Kotlin sources to the GTK app the way
+`tests/test_gui.py` holds the GTK source: the metric table, the window list, the
+type scale, the tick formats, the colours and every translated string have to
+match, and the two apps have to keep saying the same thing in the same words.
 
 ```sh
 cd .. && python3 -m unittest        # the whole suite, no phone and no SDK needed
