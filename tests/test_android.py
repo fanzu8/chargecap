@@ -826,6 +826,8 @@ class CiTest(SourceTest):
         # the signer goes into the release body, not only into the asset: a
         # reader comparing two copies should not have to open a text file
         self.assertHas(self.workflow, "signed by")
+        # and the key notes say what a build signed with another key means
+        self.assertHas(read(ANDROID, "keystore", "README.md"), "debug key")
 
     def test_the_release_notes_are_part_of_the_release(self):
         self.assertHas(self.workflow, "android/RELEASE-NOTES.md")

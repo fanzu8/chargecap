@@ -26,3 +26,7 @@ above before installing an upgrade from anywhere but this repository.
 Do not rotate or regenerate this key: a new one cannot be installed over the old
 one, so every user would have to uninstall first (which also drops the app's
 settings).
+
+The other direction is the same: a branch or PR build is signed with the
+builder's own **debug key** rather than this one, so switching between a debug
+build and a release build also means uninstalling first.
