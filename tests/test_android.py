@@ -823,13 +823,19 @@ class CiTest(SourceTest):
         # so the parse has to match the tail of the line
         self.assertHas(self.workflow, "certificate SHA-256 digest: ")
         self.assertLacks(self.workflow, "keytool -printcert")
-        self.assertHas(read(ANDROID, "RELEASE-NOTES.md"), "debug key")
+        # the signer goes into the release body, not only into the asset: a
+        # reader comparing two copies should not have to open a text file
+        self.assertHas(self.workflow, "signed by")
 
     def test_the_release_notes_are_part_of_the_release(self):
         self.assertHas(self.workflow, "android/RELEASE-NOTES.md")
         notes = read(ANDROID, "RELEASE-NOTES.md")
         self.assertHas(notes, "Android 7.0")
-        self.assertHas(notes, "WAKE_LOCK")
+        self.assertHas(notes, "universal.apk")
+        # one line, and the line says which file to download: the release page
+        # is not the place for the project's prose
+        self.assertEqual(len(notes.strip().splitlines()), 1,
+                         "the notes are the download line and nothing else")
 
     def test_the_release_is_signed_with_the_key_in_the_repository(self):
         """The keystore is committed on purpose (see keystore/README.md), and
