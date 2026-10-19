@@ -1,17 +1,7 @@
-**Download [`chargecap-<version>-universal.apk`](https://github.com/fanzu8/chargecap/releases/download/<tag>/chargecap-<version>-universal.apk) and open it on the phone.**
+**Download [`chargecap-<version>-universal.apk`](https://github.com/fanzu8/chargecap/releases/download/<tag>/chargecap-<version>-universal.apk) and open it on the phone** — or `adb install -r chargecap-<version>-universal.apk`.
 
-One file, every phone. **Android 7.0 (API 24) or newer**, no root needed.
+**Android 7.0+**, no root, one file for every phone.  Without root it only
+monitors: the charge limit stays greyed out.  Its one permission is `WAKE_LOCK`.
 
-```sh
-adb install -r chargecap-<version>-universal.apk
-```
-
-- Its only permission is `WAKE_LOCK`.
-- Nothing to set up: it opens in dark mode, follows the system language, and
-  starts monitoring.
-- Without root the charge limit stays greyed out, with the reason next to it
-  (charging control needs the GTK app's root daemon).
-
-`SHA256SUMS` verifies the download.  A branch or PR build is signed with the
-builder's own **debug key** instead of the release key below, so uninstall
-before switching between the two.
+`SHA256SUMS` checks the download.  A debug build (branch, PR) is signed with the
+builder's own debug key instead, so uninstall before switching.
