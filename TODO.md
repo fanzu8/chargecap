@@ -1,6 +1,6 @@
 # TODO
 
-## Supporting other Linux systems / Android (to discuss)
+## Supporting other Linux systems (to discuss)
 
 Goal: **where the machine lets us set things, set them; where it does not, still
 read the data and draw the chart** (monitor-only mode).
@@ -19,24 +19,10 @@ read the data and draw the chart** (monitor-only mode).
      fallback -- which is what lets the OnePlus 6T work unchanged
 2. Capability detection: enable whatever can be read, mark the rest as
    "unsupported / read-only" and trim the UI accordingly.
-3. Monitor-only mode: with no way to control charging at all (a desktop, an
-   unrooted Android), only show the data and the chart, hide or grey out the
-   controls.
-   - **done on Android**: `android/` is the monitoring half rewritten in Kotlin
-     + Compose; the controls are shown greyed out with the reason next to them
-4. Where it would land:
-   - general Linux (laptops, mainline phones such as the PinePhone): the same
-     code plus a backend table
-   - Android: GTK cannot run there.  The equivalent is root + writing the
-     charger's sysfs (ready-made: ACC / AccA, a Magisk module); without root
-     only the vendor's fixed threshold is available (Samsung "Protect battery",
-     Pixel "Charging optimisation", OnePlus/Xiaomi "smart charging" ...).
-     - the port also has to work around the platform's own readings: there is no
-       `charge_full`, `BATTERY_PROPERTY_CURRENT_NOW` is answered in mA by some
-       vendors where the API promises µA, and the charge counter's own sign is
-       worthless on those same phones (it only ever counts up, charging or
-       discharging) -- its *magnitude* is what tells the two units apart (see
-       `android/README.md`).
+3. Monitor-only mode: with no way to control charging at all (a desktop), only
+   show the data and the chart, hide or grey out the controls.
+4. Where it would land: general Linux (laptops, mainline phones such as the
+   PinePhone) gets the same code plus a backend table.
 
 ## Languages
 
