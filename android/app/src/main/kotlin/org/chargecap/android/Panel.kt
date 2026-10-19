@@ -25,12 +25,12 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -481,7 +481,14 @@ private fun SwitchRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            KeyChip(title, null, s.heading)
+            // plain bold text: the chip that used to sit behind these two
+            // titles read as a shadow around the words
+            Text(
+                title,
+                fontSize = s.heading.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
             Text(
                 subtitle,
                 fontSize = s.small.sp,
@@ -624,9 +631,34 @@ internal fun MenuTitle(text: String) {
     Text(
         text,
         fontSize = 11.sp,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.Normal,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
         modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 2.dp),
+    )
+}
+
+/**
+ * One candidate in a menu: a line of plain text, the chosen one ticked.
+ *
+ * It was Material's own DropdownMenuItem, which reserves 48dp for every row:
+ * thirteen candidates came to most of a phone screen, with the text alone in
+ * the middle of each.  This row is text and nothing else -- 24dp, which leaves
+ * the 12dp of air above and below the words that was asked for.
+ */
+@Composable
+private fun MenuRow(text: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        text,
+        fontSize = scale().value.sp,
+        fontWeight = FontWeight.Normal,
+        color = MaterialTheme.colorScheme.onSurface.copy(
+            alpha = if (selected) 1f else 0.85f),
+        maxLines = 1,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .heightIn(min = 24.dp)
+            .padding(horizontal = 12.dp),
     )
 }
 
@@ -663,13 +695,9 @@ private fun <T> ChipPicker(
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             MenuTitle(title)
             for ((itemLabel, value) in items) {
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            (if (value == current) "\u2713 " else "   ") + itemLabel,
-                            fontSize = scale().value.sp,
-                        )
-                    },
+                MenuRow(
+                    text = (if (value == current) "\u2713 " else "   ") + itemLabel,
+                    selected = value == current,
                     onClick = {
                         open = false
                         onPick(value)

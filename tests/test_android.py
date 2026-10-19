@@ -341,7 +341,10 @@ class ChartTest(SourceTest):
         self.assertEqual(status.count("bold = true"), 2, "plugged and charging")
         self.assertHas(panel, "fontWeight = if (bold) FontWeight.Bold")
         gtk = read(ROOT, "chargecap")
-        self.assertHas(gtk, "row.switch-row.compact-status label.title {")
+        # the two switch titles are plain bold text: no chip behind them, so
+        # the only rule left naming them is the size and weight one
+        self.assertHas(gtk, '"row.switch-row.compact-status label.title"')
+        self.assertEqual(gtk.count("row.switch-row.compact-status label.title"), 1)
         self.assertHas(gtk, "label.sample-value { font-weight: 400; }")
         self.assertHas(gtk, "def _capacity_row(self):")
         self.assertHas(gtk, 'box.append(key_label(_("健康度")))')
@@ -359,23 +362,39 @@ class ChartTest(SourceTest):
         self.assertHas(panel, "raised = true,")
         self.assertHas(panel, "shadow: Dp = 0.dp,")
         self.assertHas(panel, "raised: Boolean = false,")
-        # a candidate row is Material's own item, at the height Material gives
-        # it: a hand-rolled one-line row was tried and came out too tight
-        self.assertHas(panel, "DropdownMenuItem(")
-        self.assertLacks(panel, "private fun MenuRow(")
-        # both lists in the GTK app are the same popover of ticked choices
+        # a candidate row is one line of plain text 24dp tall: Material's own
+        # item reserves 48dp, which thirteen candidates turned into most of a
+        # phone screen, and a one-line row with no room at all read as too tight
+        self.assertLacks(panel, "DropdownMenuItem(")
+        self.assertHas(
+            panel,
+            "private fun MenuRow(text: String, selected: Boolean, onClick: () -> Unit) {")
+        self.assertHas(panel, "heightIn(min = 24.dp)")
+        # the text in a menu carries no weight of its own, title included
+        self.assertHas(panel, "text,\n        fontSize = 11.sp,\n        fontWeight = FontWeight.Normal,")
+        self.assertHas(panel, "fontWeight = FontWeight.Normal,\n        color = MaterialTheme.colorScheme.onSurface.copy(\n            alpha = if (selected) 1f else 0.85f),")
+        # both lists in the GTK app are the same popover of ticked choices, and
+        # both go in a scroller: without one the window's sixteen rows never
+        # appeared at all
         gtk = read(ROOT, "chargecap")
-        self.assertHas(gtk, "def choice_popover(items, current, on_pick, max_height=0):")
+        self.assertHas(gtk, "def choice_popover(items, current, on_pick, max_height=420):")
         self.assertHas(gtk, "pop = choice_popover(SAMPLES, SAMPLE_MS_CHOICE, self._on_sample,")
         self.assertHas(gtk, "[(label, secs) for label, secs in WINDOWS],")
+        self.assertHas(gtk, "self.chart.window_secs, self._on_window_picked, max_height=420)")
+        # the chip sits at the foot of the panel, so its list opens upwards
+        self.assertHas(gtk, "btn.set_direction(Gtk.ArrowType.UP)")
         # no radio circles left, and no stock dropdown either
         self.assertLacks(gtk, "Gtk.CheckButton(label=label)")
         self.assertLacks(gtk, "Gtk.DropDown.new_from_strings(")
         # a choice is one line in a row the height of the checkbutton it replaced
         self.assertHas(gtk, "popover button.choice {")
         self.assertHas(gtk, "min-height: 28px; min-width: 0px; padding: 0px 6px; margin: 0px;")
+        self.assertHas(gtk, "min-height: 0px; padding: 0px; font-weight: 400;")
         self.assertHas(gtk, 'label=("\\u2713 " if value == current else "   ") + label')
-        self.assertHas(panel, "KeyChip(title, null, s.heading)")
+        # 限制充电 / 禁止休眠 are plain bold text: the chip behind them, which
+        # read as a shadow around the words, is gone.  电源 keeps its own
+        self.assertLacks(panel, "KeyChip(title, null, s.heading)")
+        self.assertEqual(gtk.count("row.switch-row.compact-status label.title"), 1)
         self.assertHas(panel, "alpha = if (raised) 0.16f else 0.10f")
         self.assertHas(panel, ".shadow(shadow, shape)")
         # the GTK app's interval is a compact chip carrying the same chevron

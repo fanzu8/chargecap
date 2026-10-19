@@ -334,12 +334,8 @@ spinbutton.limit-spin text { font-size: 11px; }
 label.sample-caption { font-weight: 700; color: @window_fg_color; }
 /* the two states on the 电源 row: the row title's weight, not the value's */
 .bold-label { font-weight: 700; }
-/* 限制充电 / 禁止休眠 wear the same key chip 电源's title does: same size, and
-   the chip is what makes 电源 read heavier plain text cannot */
-row.switch-row.compact-status label.title {
-    padding: 1px 6px; border-radius: 8px;
-    background-color: alpha(@window_fg_color, 0.10);
-}
+/* 限制充电 / 禁止休眠 are plain bold text: the chip that sat behind them read
+   as a shadow around the words, so it is gone.  电源's title keeps its own */
 /* a candidate in a dropdown: one line of text, no radio circle, no button
    box.  Unstyled it is a flat button, which Adwaita gives 32px and padding;
    a stock checkbutton row was 28px, and that is the height to keep. */
@@ -347,7 +343,10 @@ popover button.choice {
     min-height: 28px; min-width: 0px; padding: 0px 6px; margin: 0px;
     border: 0px; box-shadow: none; background: none;
 }
-popover button.choice label { min-height: 0px; padding: 0px; }
+/* ... and one line of plain text: these rows carry no weight of their own */
+popover button.choice label {
+    min-height: 0px; padding: 0px; font-weight: 400;
+}
 /* the sampling caption is the same key chip as USB类型's, and raised */
 row.power-row.compact-status label.sample-caption {
     padding: 1px 6px; border-radius: 8px;
@@ -481,13 +480,18 @@ def hug_title(row, also_subtitle=False):
     walk(row)
 
 
-def choice_popover(items, current, on_pick, max_height=0):
+def choice_popover(items, current, on_pick, max_height=420):
     """A popover listing one-line choices, the chosen one ticked.
 
     Both apps list a choice this way.  These lists were groups of radio buttons
     while the chart window was a stock Gtk.DropDown, so the two dropdowns on one
     row disagreed: one drew a circle beside every candidate and the other drew
     none.  The circle is also a column of ink the panel has no room for.
+
+    The list goes in a scroller with a cap: a popover taller than the room left
+    around its button never appears on the phone at all -- the chart window's
+    list, at sixteen rows, was invisible until it was given the scroller the
+    recording interval's list already had.
     """
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
     for label, value in items:
@@ -1650,6 +1654,10 @@ class Window(Adw.ApplicationWindow):
         btn = Gtk.MenuButton()
         btn.add_css_class("flat")
         btn.add_css_class("lang-btn")
+        # the chip sits at the foot of the panel, where a menu button's popover
+        # is placed below it and simply never appears for want of room: this one
+        # opens upwards, as the stock dropdown it replaced used to
+        btn.set_direction(Gtk.ArrowType.UP)
         self._window_label = Gtk.Label(label=self._window_text())
         self._window_label.add_css_class("sample-value")
         btn.set_child(self._window_label)
@@ -1657,7 +1665,7 @@ class Window(Adw.ApplicationWindow):
 
         pop = choice_popover(
             [(label, secs) for label, secs in WINDOWS],
-            self.chart.window_secs, self._on_window_picked)
+            self.chart.window_secs, self._on_window_picked, max_height=420)
         self._window_pop = pop
         btn.set_popover(pop)
         return btn
