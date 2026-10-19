@@ -175,14 +175,12 @@ jobs:
             echo
             cat "chargecap-${VERSION}-build-info.txt"
           } > release-notes.md
-          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" \
-              "$APK" SHA256SUMS "chargecap-${VERSION}-build-info.txt" --clobber
-            gh release edit "${GITHUB_REF_NAME}" \
-              --title "chargecap ${GITHUB_REF_NAME}" --notes-file release-notes.md
-          else
-            gh release create "${GITHUB_REF_NAME}" \
-              --title "chargecap ${GITHUB_REF_NAME}" \
-              --notes-file release-notes.md \
-              "$APK" SHA256SUMS "chargecap-${VERSION}-build-info.txt"
-          fi
+          # the project is young and a tag gets re-pointed while it is being
+          # set up: replace whatever release is there rather than fight it.
+          # --verify-tag keeps us from creating a tag of our own.
+          gh release delete "${GITHUB_REF_NAME}" --yes 2>/dev/null || true
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "chargecap ${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md \
+            --verify-tag \
+            "$APK" SHA256SUMS "chargecap-${VERSION}-build-info.txt"

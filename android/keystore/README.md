@@ -5,10 +5,11 @@ purpose**, with its passwords written down here:
 
 | | |
 |---|---|
+| subject (DN) | `CN=fanzu8` |
 | alias | `chargecap` |
 | store password | `chargecap` |
 | key password | `chargecap` |
-| SHA-256 | `1D:A5:E1:59:E8:ED:56:94:3D:DD:5A:C9:75:5B:CE:E5:EA:0C:CA:15:63:ED:8E:39:7A:7D:E2:76:DD:D0:F5:05` |
+| SHA-256 | `16:79:B2:6C:02:47:F2:AA:99:FB:B0:F4:66:FF:AA:53:B5:4B:E0:52:16:4B:87:99:B7:AB:62:C2:6C:6E:54:CE` |
 
 Android identifies an app by its package name *and* its signing key, which is
 what decides whether one APK may be installed over another.  This app is only

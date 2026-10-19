@@ -340,6 +340,16 @@ row.switch-row.compact-status label.title {
     padding: 1px 6px; border-radius: 8px;
     background-color: alpha(@window_fg_color, 0.10);
 }
+/* the candidates a dropdown offers: one line of text, without Adwaita's list
+   padding -- asked for, though it is below the theme's touch target */
+dropdown popover listview > row { min-height: 0px; padding: 0px; }
+dropdown popover listview > row > box { padding: 0px; margin: 0px; }
+popover checkbutton { min-height: 0px; padding: 0px; }
+popover checkbutton > box { padding: 0px; margin: 0px; }
+popover checkbutton > check,
+popover checkbutton image,
+popover checkbutton label { min-height: 0px; min-width: 0px; padding: 0px;
+                            margin: 0px; }
 /* the sampling caption is the same key chip as USB类型's, and raised */
 row.power-row.compact-status label.sample-caption {
     padding: 1px 6px; border-radius: 8px;

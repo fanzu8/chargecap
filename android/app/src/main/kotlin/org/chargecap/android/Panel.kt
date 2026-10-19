@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -631,6 +630,31 @@ internal fun MenuTitle(text: String) {
 }
 
 /**
+ * One candidate in a picker's list: a single line of text.
+ *
+ * Material's DropdownMenuItem carries a 48dp touch target, which made a list of
+ * sixteen windows mostly empty air next to 11sp text.  Asked for: one line, no
+ * more -- below the guidance, so a mis-tap is possible.
+ */
+@Composable
+private fun MenuRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            (if (selected) "\u2713 " else "   ") + label,
+            fontSize = scale().value.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
  * A chip that shows the value it holds and opens a list to change it.
  *
  * Content sized on purpose: a TextButton's minimum width and padding pushed the
@@ -663,18 +687,10 @@ private fun <T> ChipPicker(
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             MenuTitle(title)
             for ((itemLabel, value) in items) {
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            (if (value == current) "\u2713 " else "   ") + itemLabel,
-                            fontSize = scale().value.sp,
-                        )
-                    },
-                    onClick = {
-                        open = false
-                        onPick(value)
-                    },
-                )
+                MenuRow(itemLabel, value == current) {
+                    open = false
+                    onPick(value)
+                }
             }
         }
     }

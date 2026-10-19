@@ -359,6 +359,11 @@ class ChartTest(SourceTest):
         self.assertHas(panel, "raised = true,")
         self.assertHas(panel, "shadow: Dp = 0.dp,")
         self.assertHas(panel, "raised: Boolean = false,")
+        # a candidate row is one line, not Material's 48dp touch target
+        self.assertHas(panel, "private fun MenuRow(")
+        self.assertLacks(panel, "DropdownMenuItem(")
+        self.assertHas(read(ROOT, "chargecap"),
+                       "dropdown popover listview > row { min-height: 0px; padding: 0px; }")
         self.assertHas(panel, "KeyChip(title, null, s.heading)")
         self.assertHas(panel, "alpha = if (raised) 0.16f else 0.10f")
         self.assertHas(panel, ".shadow(shadow, shape)")
