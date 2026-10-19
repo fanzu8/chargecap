@@ -168,12 +168,16 @@ jobs:
           APK: ${{ steps.build.outputs.apk }}
         run: |
           set -euo pipefail
+          # the notes are short on purpose: the reader has to see which file to
+          # download before anything else.  The build info stays an asset; only
+          # the hash and the signer are worth repeating next to the download.
+          signer=$(sed -n 's/^signed by //p' "chargecap-${VERSION}-build-info.txt")
           {
-            cat android/RELEASE-NOTES.md
+            sed -e "s/<version>/${VERSION}/g" \
+                -e "s/<tag>/${GITHUB_REF_NAME}/g" \
+                android/RELEASE-NOTES.md
             echo
-            echo "---"
-            echo
-            cat "chargecap-${VERSION}-build-info.txt"
+            echo "sha256 \`$(cut -d' ' -f1 SHA256SUMS)\` · signed by \`${signer:-unknown}\`"
           } > release-notes.md
           # the project is young and a tag gets re-pointed while it is being
           # set up: replace whatever release is there rather than fight it.
