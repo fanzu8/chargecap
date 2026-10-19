@@ -53,6 +53,13 @@ Other mainline Qualcomm phones should work too as long as their charger exposes
 - **Chart**: overlay any of voltage / current / power / temperature / charge as
   **metrics**, over a **window** from 15 seconds to 48 hours. Samples live in
   memory only, for as long as the app is open.
+- **Recording interval** (the `采样间隔` chip beside `Power`): how often the
+  chart stores a sample, in **13 steps from 0.01 s to 20 s** — 0.01 / 0.03 /
+  0.05 / 0.1 / 0.3 / **0.5** / 1 / 2 / 3 / 5 / 10 / 15 / 20 seconds, 0.5 s by
+  default. It is independent of the panel's own 500 ms readout, and the buffer
+  holds a fixed 48 hours' worth of 500 ms samples: a shorter interval buys
+  detail and spends reach, so 0.01 s keeps about an hour and 20 s about eighty
+  days. Both apps offer the same steps and remember the choice.
 - **Dark by default**, with a background switch (dark / light / follow the
   system) in the header, just before the language one.
 - **Follows the system language** (Chinese / English), switchable from the
