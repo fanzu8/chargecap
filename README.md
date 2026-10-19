@@ -5,8 +5,10 @@
 **English** | [中文](README.zh.md)
 
 Keep a plugged-in phone's battery inside a charge window: a small **root
-daemon** plus an **unprivileged GTK4/libadwaita app**, written for the
-**OnePlus 6 / 6T** (postmarketOS).  Its Chinese name is **电电** (diàndiàn).
+daemon** plus an **unprivileged GTK4/libadwaita app** for **postmarketOS**
+(written on the **OnePlus 6 / 6T**), and the same panel, chart and words in a
+**Kotlin + Jetpack Compose app for Android**.  Its Chinese name is **电电**
+(diàndiàn).
 
 **Core features**
 - limit how full the battery gets
@@ -27,9 +29,14 @@ daemon** plus an **unprivileged GTK4/libadwaita app**, written for the
 |---|---|
 | OnePlus 6 (enchilada) | tested — the device this was written on |
 | OnePlus 6T (fajita) | expected to work unchanged: mainline gives both the same gauge (`ti,bq27411`) and charger (`pmi8998_charger`) in the shared `sdm845-oneplus-common.dtsi`, and the app finds those nodes by the attributes they expose |
+| Huawei P20 Pro (CLT-AL00), Android 9 | tested — the Android app, no root needed |
 
 Other mainline Qualcomm phones should work too as long as their charger exposes
 `online` / `status` / `usb_type` / `current_max` — see `TODO.md`.
+
+The Android app is not tied to those charger nodes: it reads what the platform
+publishes, so it runs on **any phone with Android 7.0 (API 24) or newer** — see
+[Android](#android).
 
 ## What it does
 
@@ -117,6 +124,8 @@ limit 0.
 ```sh
 sudo ./uninstall.sh        # removes everything and releases the charger
 ```
+
+Android is an APK rather than a build from source: see [Android](#android).
 
 ## Development
 

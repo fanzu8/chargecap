@@ -5,7 +5,8 @@
 [English](README.md) | **中文**
 
 把插着 USB 的手机电量维持在一个区间内：**一个 root 守护进程 + 一个不需要
-任何特权的 GTK4/libadwaita 界面**，为 **OnePlus 6/6T**（postmarketOS）编写。
+任何特权的 GTK4/libadwaita 界面**（为 **OnePlus 6/6T** 的 postmarketOS 编写），
+以及**安卓端**同样的面板、曲线和文案 —— Kotlin + Jetpack Compose 写的 App。
 
 **核心功能**
 - 限制充电电量
@@ -23,9 +24,13 @@
 |---|---|
 | OnePlus 6（enchilada） | 已实测 —— 本项目就是为它写的 |
 | OnePlus 6T（fajita） | 预期原样可用：mainline 里两者共用 `sdm845-oneplus-common.dtsi`，电量计同为 `ti,bq27411`、充电器同为 `pmi8998_charger`；而这两个节点是按属性识别的 |
+| 华为 P20 Pro（CLT-AL00），Android 9 | 已实测 —— 安卓版，不需要 root |
 
 其它 mainline 高通机型：只要充电器暴露 `online` / `status` / `usb_type` / `current_max`，
 大概率也能用，详见 `TODO.md`。
+
+安卓版不依赖这些充电器节点：它读的是平台公开出来的东西，所以 **Android 7.0
+（API 24）及以上的手机都能跑** —— 见 [Android](#android)。
 
 ## 功能
 
@@ -94,6 +99,8 @@ sudo ./install.sh          # 必须在仓库目录里执行
 ```sh
 sudo ./uninstall.sh        # 全部清掉，并把充电器恢复成"允许 + 额定限流"
 ```
+
+安卓端不用从源码编译，直接装 APK 就行 —— 见 [Android](#android)。
 
 ## 开发
 
