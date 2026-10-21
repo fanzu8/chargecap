@@ -8,9 +8,29 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 禁止休眠: the only privilege the app asks for.  Battery data comes from
-         the public BatteryManager API, so nothing else is needed. -->
+    <!-- 禁止休眠: a wake lock, and the only privilege the app asks for without
+         a question.  Battery data comes from the public BatteryManager API, so
+         nothing else is needed. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- 通知横幅: granted at install time up to Android 12; from 13 it is a
+         runtime permission, asked for when the 通知 master switch goes on -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- 自启动: every vendor keeps its own screen and there is no API for it.
+         Naming the packages is what lets an explicit Intent reach them from
+         Android 11 on; the app still falls back to its own page. -->
+    <queries>
+        <package android:name="com.huawei.systemmanager" />
+        <package android:name="com.miui.securitycenter" />
+        <package android:name="com.coloros.safecenter" />
+        <package android:name="com.oppo.safe" />
+        <package android:name="com.vivo.permissionmanager" />
+        <package android:name="com.iqoo.secure" />
+        <package android:name="com.samsung.android.lool" />
+        <package android:name="com.meizu.safe" />
+        <package android:name="com.letv.android.letvsafe" />
+    </queries>
 
     <uses-feature
         android:name="android.hardware.usb.host"

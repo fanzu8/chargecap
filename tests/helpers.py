@@ -112,9 +112,14 @@ def read_json(path):
 GUI_SRC = os.path.join(ROOT, "chargecap")
 
 
-def gui_source():
-    with open(GUI_SRC) as f:
+def source(name):
+    """A file from the repository as text: the GUI, the notifier, a unit."""
+    with open(os.path.join(ROOT, name)) as f:
         return f.read()
+
+
+def gui_source():
+    return source("chargecap")
 
 
 def gui_tree():
@@ -160,6 +165,42 @@ def gui_source_strings():
                 and node.args and isinstance(node.args[0], ast.Constant)):
             out.add(node.args[0].value)
     return out
+
+
+def notify_strings():
+    """Every word the notification table asks for, in either language.
+
+    The table is written in Chinese and translated where it is read, so the
+    words are collected by reading it with a translator that records what it is
+    asked for -- the same way the panel asks.
+    """
+    import notifications
+    seen = set()
+    previous = notifications._translate
+
+    def record(text):
+        seen.add(text)
+        return text
+
+    voice, notifications.VOICE_CMD = notifications.VOICE_CMD, "/usr/bin/spd-say"
+    notifications.set_translator(record)
+    try:
+        for n in notifications.NOTIFICATIONS:
+            n.title()
+            n.short()
+            n.label()
+            n.says(n.default)
+            n.until_label()
+            n.counts()
+        for group in notifications.GROUPS:
+            group.title()
+        # with a voice in the house, so the ways that need one are collected
+        # too -- the panel offers them wherever spd-say is installed
+        notifications.spoken_kinds()
+    finally:
+        notifications.set_translator(previous)
+        notifications.VOICE_CMD = voice
+    return seen
 
 
 def daemon_default_args():

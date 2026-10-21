@@ -17,8 +17,18 @@ set -e
 
 systemctl disable --now chargecap.service 2>/dev/null || true
 
+# the notifier lives in the user's session; stop it there before its files go
+USER_UID=$(id -u user 2>/dev/null || true)
+if [ -n "$USER_UID" ] && [ -d "/run/user/$USER_UID" ]; then
+	sudo -u user env XDG_RUNTIME_DIR="/run/user/$USER_UID" \
+		systemctl --user disable --now chargecap-notify.service \
+		2>/dev/null || true
+fi
+
 rm -f /etc/systemd/system/chargecap.service
+rm -f /usr/lib/systemd/user/chargecap-notify.service
 rm -f /usr/local/bin/chargecap
+rm -f /usr/local/bin/chargecap-notify
 rm -f /usr/share/applications/org.postmarketos.Chargecap.desktop
 rm -f /usr/share/icons/hicolor/scalable/apps/org.postmarketos.Chargecap.svg
 gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true

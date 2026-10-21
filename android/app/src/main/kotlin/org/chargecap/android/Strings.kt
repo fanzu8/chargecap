@@ -41,7 +41,10 @@ private val EN = mapOf(
     "下限" to "Lower limit",
     "禁止休眠" to "Inhibit sleep",
     "系统不休眠，保持网络在线" to "No sleep, the network stays up",
-    "指标" to "Metrics",
+    "实时采集" to "Live data",
+    "图形化" to "Chart",
+    "图形化已关闭" to "The chart is off",
+    "实时采集已关闭" to "Live data is off",
     "窗口" to "Window",
     "采样间隔" to "Interval",
     // status table
@@ -51,6 +54,10 @@ private val EN = mapOf(
     "功率(W)" to "Power",
     "电流" to "Current",
     "温度(°C)" to "Temp",
+    // ... and the bare names, the 通知 page's group headings
+    "电压" to "Voltage",
+    "功率" to "Power",
+    "温度" to "Temperature",
     // Android publishes the gauge's own counter, never charge_full: the row
     // says what the two numbers really are, and the ⓘ next to them says what
     // the first one is not
@@ -84,8 +91,6 @@ private val EN = mapOf(
     "USB：电脑或充电宝的 USB 口\n" to "USB: port on a computer or a power bank\n",
     "无线：无线充电板\n" to "Wireless: charging pad\n",
     "未知：未识别，通常是没插线" to "Unknown: nothing recognised, usually unplugged",
-    // the app's own name: the Chinese name is 电电, the project name is chargecap
-    "电电" to "chargecap",
     // the header switches: background, then language
     "背景" to "Background",
     "语言" to "Language",
@@ -110,6 +115,87 @@ private val EN = mapOf(
     "过压" to "Over voltage",
     "故障" to "Failure",
     "过冷" to "Cold",
+    // the app's two pages, side by side in the header, and 设置 at the far
+    // right of it.  通知 is the page the app opens on, which the GTK app has no
+    // counterpart for yet: its own master switch, one switch per notification,
+    // the number each fires at, and how each one arrives.  高级 is the panel the
+    // GTK app draws.
+    "通知" to "Notifications",
+    "高级" to "Advanced",
+    "基础功能" to "Base",
+    "设置" to "Settings",
+    "返回" to "Back",
+    "通知开关" to "Notifications",
+    "通知方式" to "Notify by",
+    "横幅" to "Banner",
+    "语音" to "Voice",
+    "充电完成" to "Charging complete",
+    "电量过低" to "Battery low",
+    "电源连接" to "Power connected",
+    "电源断开" to "Power disconnected",
+    // ... and the short words the rows wear under their group's heading
+    "连接" to "Connected",
+    "断开" to "Disconnected",
+    "过高" to "High",
+    "过低" to "Low",
+    "充电过高" to "Charge high",
+    "放电过高" to "Discharge high",
+    "充电" to "Charging",
+    "温度过高" to "Too hot",
+    "温度过低" to "Too cold",
+    "电压过高" to "Voltage high",
+    "电压过低" to "Voltage low",
+    "充电电流过高" to "High charge current",
+    "放电电流过高" to "High discharge current",
+    "功率过高" to "High power",
+    // the four numbers the notifications fire at, each its own
+    "达" to "at",
+    "低于" to "below",
+    "高于" to "above",
+    // how often a voice says it, and the one that never stops on its own
+    "次数" to "Times",
+    "间隔" to "Interval",
+    "直到电源断开" to "until power off",
+    "1次" to "1×",
+    "2次" to "2×",
+    "3次" to "3×",
+    "5次" to "5×",
+    "10次" to "10×",
+    "直到开始充电" to "until charging",
+    // ... and the two screens a notification needs the system for: the
+    // channel's banner and sound, and the vendor's autostart list
+    "各厂商的设置位置不一样，下面的按钮带你去找" to "Every vendor files these in a different place; the buttons below take you there",
+    "自启动" to "Autostart",
+    "让 chargecap 开机后自己起来" to "Let chargecap start itself after a reboot",
+    // 设置's 关于: four lines, and a copy of them
+    "关于" to "About",
+    "版本" to "Version",
+    "作者" to "Author",
+    "更新" to "Updates",
+    "隐私" to "Privacy",
+    "不联网、不收集任何数据" to "No network, no data collected",
+    "通知横幅与声音" to "Banners and sound",
+    "在通知设置里放开横幅和声音" to "Turn the banner and the sound on in the notification settings",
+    "打开" to "Open",
+    // the dialog 通知开关 opens with when the system would swallow the reminder
+    "提醒可能收不到" to "The reminder may not arrive",
+    "系统通知没有打开，横幅和声音都不会出现" to "System notifications are off, so there is no banner and no sound",
+    "系统可能在后台关掉它：自启动与省电白名单" to "The system may stop it in the background: autostart and the battery exemption",
+    "去设置" to "Go to settings",
+    "知道了" to "Got it",
+    // the sleep record under 禁止休眠: a number the app keeps, not a reminder
+    "次" to "×",
+    "自 %s 起" to "since %s",
+    "还没有休眠" to "no sleep yet",
+    "最近 %s，%s" to "latest %s, %s",
+    "睡了 %d 分钟" to "slept %d min",
+    "睡了 %d 小时 %d 分钟" to "slept %d h %d min",
+    "休眠记录" to "Sleep log",
+    "还没开启禁止休眠" to "sleep has never been inhibited",
+    // the notification channel's own name and description, the two lines the
+    // system's 通知 page shows above 横幅 / 声音
+    "充电提醒" to "Charging alerts",
+    "电量、温度、电压、电流或功率越过你设的线时提醒" to "When the charge, the temperature, the voltage, the current or the power crosses the line you set",
 )
 
 object Strings {

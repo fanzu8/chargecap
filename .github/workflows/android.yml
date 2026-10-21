@@ -58,7 +58,7 @@ jobs:
         run: |
           if [ "${GITHUB_REF_NAME}" != "v${VERSION}" ]; then
             echo "tag ${GITHUB_REF_NAME} does not match appVersion ${VERSION}:" >&2
-            echo "bump appVersion in android/build.gradle.kts, or tag the commit" >&2
+            echo "bump appVersion in android/app/build.gradle.kts, or tag the commit" >&2
             echo "that declares it" >&2
             exit 1
           fi

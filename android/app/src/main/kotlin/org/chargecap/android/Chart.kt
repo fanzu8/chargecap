@@ -91,21 +91,96 @@ fun LiveChart(
             return@Canvas
         }
 
-        val colW = 30.dp.toPx()      // one Y-axis column (name / unit / ticks)
-        val padX = 4.dp.toPx()       // gap between the plot and the nearest column
+        val padX = 2.dp.toPx()       // gap between the plot and the nearest column
         val padT = 26.dp.toPx()      // room for the two-line axis header
         val padB = 13.dp.toPx()
         val left = sel.filter { it.side == "left" }
         val right = sel.filter { it.side == "right" }
-        val ml = padX + colW * left.size
-        val mr = padX + colW * right.size
-        val pw = max(10f, size.width - ml - mr)
         val ph = max(10f, size.height - padT - padB)
         val top = padT
         val bottom = padT + ph
         val now = SystemClock.elapsedRealtime()
         val cutoff = now - windowSecs * 1000L
         val span = max(1.0, (now - cutoff).toDouble())
+
+        val start = buffer.firstVisibleFrom(cutoff)
+        val visible = buffer.size - start
+        // the decimation cap is taken from the widget, not from the plot: the
+        // plot's width is not known until the columns are, and the columns are
+        // sized from ranges sampled with this stride
+        val maxPoints = min(MAX_POINTS, max(2, (size.width * PTS_PER_PX).toInt()))
+        // rounded up, so the scratch buffers can never be overrun by a stride
+        // that falls a little short of `maxPoints`
+        val step = if (visible > maxPoints) (visible + maxPoints - 1) / maxPoints else 1
+        val newest = buffer.size - 1
+
+        // Each curve's own Y range, before anything is drawn: the axis columns
+        // are sized from the ticks these ranges print, and the plot takes the
+        // rest.  (The sampling below recomputes the same min/max while it fills
+        // the scratch buffers -- the stride is the same one.)
+        val ranges = HashMap<String, Pair<Float, Float>>()
+        for (m in sel) {
+            if (m.fixed != null) {
+                ranges[m.key] = m.fixed
+                continue
+            }
+            var lo = Float.MAX_VALUE
+            var hi = -Float.MAX_VALUE
+            var last = -1
+            var i = start
+            while (i < buffer.size) {
+                val v = buffer.valueAt(m.key, i)
+                if (!v.isNaN()) {
+                    if (v < lo) lo = v
+                    if (v > hi) hi = v
+                    last = i
+                }
+                i += step
+            }
+            if (last != newest && newest >= 0) {
+                val v = buffer.valueAt(m.key, newest)
+                if (!v.isNaN()) {
+                    if (v < lo) lo = v
+                    if (v > hi) hi = v
+                }
+            }
+            ranges[m.key] = if (lo > hi) {
+                0f to 1f
+            } else {
+                val pad = (hi - lo) * 0.1f
+                var a = lo - pad
+                var b = hi + pad
+                if (b - a < 1e-9f) {
+                    a -= 0.5f
+                    b += 0.5f
+                }
+                a to b
+            }
+        }
+
+        // A column is exactly as wide as what it draws: 电量's "100" needs half
+        // of what 功率's "+9.28" does, and the difference is plot the fixed
+        // width was leaving empty.  So the plot reaches closer to both ends.
+        fun textWidth(s: String): Float =
+            measurer.measure(AnnotatedString(s), axisStyle, maxLines = 1).size.width.toFloat()
+
+        fun columnWidth(m: Metric): Float {
+            val (lo, hi) = ranges.getValue(m.key)
+            var w = maxOf(textWidth(metricAxisLabel(m)), textWidth(m.unit))
+            for (f in TICKS) {
+                w = maxOf(w, textWidth(fmt(m.format, (lo + f * (hi - lo)).toDouble())))
+            }
+            return w + 1f
+        }
+
+        val widths = sel.associate { it.key to columnWidth(it) }
+        fun sideWidth(side: List<Metric>): Float =
+            if (side.isEmpty()) 0f
+            else side.sumOf { widths.getValue(it.key).toDouble() }.toFloat() + padX
+
+        val ml = sideWidth(left)
+        val mr = sideWidth(right)
+        val pw = max(10f, size.width - ml - mr)
 
         // plot frame
         drawRect(
@@ -125,19 +200,9 @@ fun LiveChart(
             drawLine(grid, Offset(x, top), Offset(x, bottom), strokeWidth = 0.5.dp.toPx())
         }
 
-        val start = buffer.firstVisibleFrom(cutoff)
-        val visible = buffer.size - start
-        val maxPoints = min(MAX_POINTS, max(2, (pw * PTS_PER_PX).toInt()))
-        // rounded up, so the scratch buffers can never be overrun by a stride
-        // that falls a little short of `maxPoints`
-        val step = if (visible > maxPoints) (visible + maxPoints - 1) / maxPoints else 1
-        val newest = buffer.size - 1
-
         for (m in sel) {
             // --- collect what is visible, decimated to the plot's width ---
             var count = 0
-            var lo = Float.MAX_VALUE
-            var hi = -Float.MAX_VALUE
             var last = -1
             var i = start
             while (i < buffer.size) {
@@ -146,8 +211,6 @@ fun LiveChart(
                     xs[count] = (pw.toDouble() * (buffer.timeAt(i) - cutoff) / span).toFloat()
                     vs[count] = v
                     count++
-                    if (v < lo) lo = v
-                    if (v > hi) hi = v
                     last = i
                 }
                 i += step
@@ -159,24 +222,13 @@ fun LiveChart(
                     xs[count] = (pw.toDouble() * (buffer.timeAt(newest) - cutoff) / span).toFloat()
                     vs[count] = v
                     count++
-                    if (v < lo) lo = v
-                    if (v > hi) hi = v
                 }
             }
             if (count == 0) continue
 
-            if (m.fixed != null) {
-                lo = m.fixed.first
-                hi = m.fixed.second
-            } else {
-                val pad = (hi - lo) * 0.1f
-                lo -= pad
-                hi += pad
-                if (hi - lo < 1e-9f) {
-                    lo -= 0.5f
-                    hi += 0.5f
-                }
-            }
+            // the same range the columns were measured against, so a tick and
+            // the curve it belongs to can never disagree
+            val (lo, hi) = ranges.getValue(m.key)
             val k = ph / (hi - lo)
 
             // the curve
@@ -192,8 +244,10 @@ fun LiveChart(
             // five ticks down the side of the plot
             val col = if (m.side == "left") left.indexOf(m) else right.indexOf(m)
             val align = if (m.side == "left") "right" else "left"
-            val ax = if (m.side == "left") ml - padX - colW * col
-            else size.width - mr + padX + colW * col
+            val before = (if (m.side == "left") left else right).take(col)
+                .sumOf { widths.getValue(it.key).toDouble() }.toFloat()
+            val ax = if (m.side == "left") ml - padX - before
+            else size.width - mr + padX + before
             text(metricAxisLabel(m), ax, 0f, m.color, align)
             text(m.unit, ax, lineHeight, m.color, align)
             for (f in TICKS) {

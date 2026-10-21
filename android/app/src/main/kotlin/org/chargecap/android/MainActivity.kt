@@ -13,16 +13,16 @@ package org.chargecap.android
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,23 +32,34 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// The app: the GTK app's single panel, on Android.
+// The app: the app opens on 通知 (its own page, Android only for now), the
+// panel the GTK app draws is the page beside it (高级), and the gear holds 设置
+// -- the two screens that belong to the system rather than to either page.
+//
+// This file is the frame and nothing else: which page is showing, the header,
+// and the two buttons in it that are not pages.  The pages themselves are in
+// Pages.kt, what they read and write in AppState.kt, and the rows they draw
+// with in Panel.kt.
 //
 // What carried over: the whole status table, the live chart with its metric
 // toggles and windows, the language switch, 禁止休眠 (now a wake lock) and the
 // in-memory sample history.
 // What could not: the charging control itself -- it needs root to write the
 // charger's sysfs, which the GTK app gets from its daemon (see android/README.md).
+// What Android has first: 通知, the page of notifications and their thresholds.
 
 class MainActivity : ComponentActivity() {
     private lateinit var prefs: Prefs
@@ -61,10 +72,23 @@ class MainActivity : ComponentActivity() {
         inhibitor = SleepInhibitor(this)
         if (prefs.inhibitSleep) inhibitor.acquire()
 
+        // 通知横幅与声音 hang off the channel, so it has to exist before the
+        // system's 通知 page has anything to show (see Notifications.kt)
+        createNotificationChannel(this)
+
+        // the sleep record loads with the process, and a reboot clears it
+        Sleeps.start(prefs)
+
         // Sampling lives in the process rather than in the UI, so the chart
-        // keeps filling while the screen is off.
-        Monitor.intervalMs = prefs.sampleMs.toLong()
-        Monitor.start(applicationContext)
+        // keeps filling while the screen is off -- when 采集 is on: the switch
+        // is read here, once, before the sampler starts.
+        Monitor.recording = prefs.record
+        Monitor.start(applicationContext, prefs.sampleMs.toLong())
+
+        // ... and the rules ride on those same samples, with the process rather
+        // than with a page, so a notification arrives with the screen off too
+        Voice.start(this)
+        startNotifier(this)
 
         setContent { ChargecapApp(prefs, inhibitor) }
     }
@@ -73,6 +97,7 @@ class MainActivity : ComponentActivity() {
         // the wake lock dies with the process anyway; releasing it here keeps
         // the switch from outliving the app that owns it
         if (isFinishing) inhibitor.release()
+        Voice.shutdown()
         super.onDestroy()
     }
 }
@@ -80,76 +105,124 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChargecapApp(prefs: Prefs, inhibitor: SleepInhibitor) {
-    var lang by remember { mutableStateOf(prefs.lang) }
-    var theme by remember { mutableStateOf(prefs.theme) }
-    var selected by remember {
-        mutableStateOf(prefs.metrics.ifEmpty { DEFAULT_METRICS })
-    }
-    var windowSecs by remember { mutableStateOf(prefs.windowSecs) }
-    var sampleMs by remember { mutableStateOf(prefs.sampleMs) }
-    var inhibit by remember { mutableStateOf(prefs.inhibitSleep) }
-    val snapshot by Monitor.state.collectAsState()
+    // everything the pages read and write; built once, for the life of the UI
+    val state = remember { AppState(prefs, inhibitor) }
 
-    AppTheme(theme = theme) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text(tr("电电")) },
-                    actions = {
-                        // the background sits before the language, as on pmOS
-                        BackgroundButton(theme) { picked ->
-                            theme = picked
-                            prefs.theme = picked
-                        }
-                        LanguageButton(lang) { picked ->
-                            lang = picked
-                            Strings.lang = picked
-                            prefs.lang = picked
-                        }
-                    },
-                )
-            },
-        ) { inset ->
-            Column(
-                Modifier
-                    .padding(inset)
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 12.dp),
-            ) {
-                LimitsSection()
+    // the phone's own back: 设置 to the page that opened it, 高级 to 通知 --
+    // and from 通知 it leaves the app, as it should
+    BackHandler(enabled = state.page != Page.NOTIFY) { state.leave() }
 
-                SleepSection(inhibit) { on ->
-                    inhibit = on
-                    prefs.inhibitSleep = on
-                    if (on) inhibitor.acquire() else inhibitor.release()
-                }
-
-                StatusSection(snapshot, sampleMs) { ms ->
-                    sampleMs = ms
-                    prefs.sampleMs = ms
-                    Monitor.intervalMs = ms.toLong()
-                }
-
-                ChartSection(
-                    buffer = Monitor.buffer,
-                    selected = selected,
-                    onToggle = { key ->
-                        // keep METRICS order so the Y axes never jump around
-                        selected = if (key in selected) selected - key
-                        else METRIC_KEYS.filter { it in selected || it == key }
-                        prefs.metrics = selected
-                    },
-                    windowSecs = windowSecs,
-                    onWindow = { secs ->
-                        windowSecs = secs
-                        prefs.windowSecs = secs
-                    },
-                    seq = snapshot.seq,
-                )
+    AppTheme(theme = state.theme) {
+        when (state.page) {
+            // 通知 and 高级 are the app's two functions, side by side in the
+            // header; only what sits under it changes
+            Page.NOTIFY, Page.OTHER -> Scaffold(
+                topBar = { AppHeader(state) },
+            ) { inset ->
+                if (state.page == Page.NOTIFY) NotifyPage(state, inset)
+                else PanelPage(state, inset)
             }
+
+            // 设置: what is neither page's own, behind the gear at the far right
+            Page.SETTINGS -> Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text(tr("设置")) },
+                        navigationIcon = {
+                            TextButton(onClick = { state.leave() }) {
+                                Text(
+                                    "‹ " + tr("返回"),
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        },
+                    )
+                },
+            ) { inset -> SettingsPage(inset) }
         }
     }
+}
+
+/**
+ * The header the two pages share: 通知 and 高级 in front -- they are what the
+ * app is -- then the theme and the language as a pair, then 设置 alone on the
+ * far right.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppHeader(state: AppState) {
+    TopAppBar(
+        title = { PageTabs(state) },
+        actions = {
+            BackgroundButton(state.theme, state::setTheme)
+            LanguageButton(state.lang, state::setLang)
+            SettingsButton { state.show(Page.SETTINGS) }
+        },
+    )
+}
+
+/**
+ * 通知 and 高级, where a title would otherwise be: the page you are on is the
+ * one written solid *and* sitting on its own background, so which of the two is
+ * showing needs no reading -- the other is a door to it.
+ */
+@Composable
+private fun PageTabs(state: AppState) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        for (target in listOf(Page.NOTIFY, Page.OTHER)) {
+            val here = target == state.page
+            Text(
+                if (target == Page.NOTIFY) tr("通知") else tr("高级"),
+                fontSize = 17.sp,
+                fontWeight = if (here) FontWeight.Bold else FontWeight.Normal,
+                color = if (here) MaterialTheme.colorScheme.onPrimaryContainer
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (here) MaterialTheme.colorScheme.primaryContainer
+                        else Color.Transparent)
+                    .clickable { state.show(target) }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+            Spacer(Modifier.width(4.dp))
+        }
+    }
+}
+
+/**
+ * The gear, alone at the far right: 设置, one page in.
+ *
+ * A gear rather than a word because the two pages beside it are the words --
+ * what is in here is not a page of the app, it is the way out to the system's.
+ */
+@Composable
+private fun SettingsButton(onClick: () -> Unit) {
+    HeaderButton("\u2699", fontSize = 22.sp, onClick = onClick)
+}
+
+/**
+ * A header button: a couple of characters, or the gear, sized to what is in it.
+ *
+ * Not a TextButton, whose minimum width is what held the theme and the language
+ * apart -- they are meant to read as one pair.
+ */
+@Composable
+private fun HeaderButton(
+    label: String,
+    fontSize: TextUnit = 15.sp,
+    onClick: () -> Unit,
+) {
+    Text(
+        label,
+        fontSize = fontSize,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+    )
 }
 
 /**
@@ -164,17 +237,13 @@ private fun BackgroundButton(current: Theme, onPick: (Theme) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val zh = Strings.effective == Lang.ZH
     Box {
-        TextButton(onClick = { open = true }) {
-            Text(
-                when (current) {
-                    Theme.DARK -> if (zh) "暗" else "Dark"
-                    Theme.LIGHT -> if (zh) "亮" else "Light"
-                    Theme.AUTO -> if (zh) "随" else "Auto"
-                },
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
+        HeaderButton(
+            when (current) {
+                Theme.DARK -> if (zh) "暗" else "Dark"
+                Theme.LIGHT -> if (zh) "亮" else "Light"
+                Theme.AUTO -> if (zh) "随" else "Auto"
+            },
+        ) { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             MenuTitle(tr("背景"))
             for ((value, label) in listOf(
@@ -200,7 +269,8 @@ private fun BackgroundButton(current: Theme, onPick: (Theme) -> Unit) {
 }
 
 /**
- * The language switch: a couple of characters, in the header bar.
+ * The language switch: a couple of characters, in the header bar, right of the
+ * background one.
  *
  * It picks between following the system and a language pushed by hand, exactly
  * like the GTK app -- except that here the whole UI simply recomposes instead
@@ -210,13 +280,9 @@ private fun BackgroundButton(current: Theme, onPick: (Theme) -> Unit) {
 private fun LanguageButton(current: Lang, onPick: (Lang) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        TextButton(onClick = { open = true }) {
-            Text(
-                if (Strings.effective == Lang.ZH) "中" else "EN",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
+        // the button says what you would get, not what you have: a Chinese
+        // page offers "EN", an English one 中
+        HeaderButton(if (Strings.effective == Lang.ZH) "EN" else "中") { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             MenuTitle(tr("语言"))
             for ((value, label) in listOf(

@@ -1,0 +1,15 @@
+[Unit]
+Description=chargecap notifications (banners and the voice)
+Documentation=https://github.com/fanzu8/chargecap
+# the panel is the page; this is the half that stays up with it closed
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/chargecap-notify
+# a crash is not a reason to go quiet until the next login
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

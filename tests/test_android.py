@@ -28,8 +28,9 @@ ANDROID = os.path.join(ROOT, "android")
 MAIN = os.path.join(ANDROID, "app", "src", "main")
 KOTLIN = os.path.join(MAIN, "kotlin", "org", "chargecap", "android")
 
-SOURCES = ("Strings.kt", "Battery.kt", "Chart.kt", "Panel.kt",
-           "MainActivity.kt", "Prefs.kt", "Theme.kt")
+SOURCES = ("Strings.kt", "Battery.kt", "Chart.kt", "AppState.kt", "Rules.kt",
+           "Pages.kt", "Panel.kt", "MainActivity.kt", "Notifications.kt",
+           "Prefs.kt", "Sleep.kt", "SystemSettings.kt", "Theme.kt", "Voice.kt")
 
 # the strings the Android UI needs and the GTK app has no counterpart for:
 # Android reports the port it is plugged into (AC / USB / wireless / dock)
@@ -61,18 +62,59 @@ ANDROID_ONLY = {
     "过压",
     "故障",
     "过冷",
+    # the dialog 通知开关 opens with when the system would swallow the reminder
+    "提醒可能收不到",
+    "系统通知没有打开，横幅和声音都不会出现",
+    "系统可能在后台关掉它：自启动与省电白名单",
+    "去设置",
+    # 设置, the two switches only the system owns, each a row out of the app
+    "返回",
+    # ... and the screens only the system owns: the channel's banner and sound,
+    # and the vendor's autostart list, which the app cannot switch itself
+    "各厂商的设置位置不一样，下面的按钮带你去找",
+    "通知横幅与声音",
+    "在通知设置里放开横幅和声音",
+    "自启动",
+    "让 chargecap 开机后自己起来",
+    "打开",
+    # the notification channel: the row the system's 通知 page hinges on
+    "充电提醒",
+    "电量、温度、电压、电流或功率越过你设的线时提醒",
 }
 
 # the shared vocabulary: rename a label on one side and the other has to
 # follow, so both panels keep reading the same way
 SHARED = (
+    # 通知: both apps carry the same notifications, the same words and the
+    # same two ways of arriving, so the vocabulary is shared now
+    "通知", "高级", "通知开关", "通知方式", "次数", "间隔",
+    "横幅", "语音",
+    "充电完成", "电量过低", "温度过高", "温度过低", "放电电流过高",
+    "电源连接", "电源断开", "电压过高", "电压过低", "充电电流过高",
+    "功率过高",
+    "连接", "断开", "过高", "过低", "充电过高", "放电过高",
+    # the groups the page reads in: the charge, the plug and the charging
+    # state, then one per kind of reading
+    "基础功能", "电源", "充电", "温度", "电压", "电流", "功率",
+    "达", "低于", "高于",
+    "1次", "2次", "3次", "5次", "10次",
+    "直到开始充电", "直到电源断开",
+    # 关于: the same four lines on both sides, and a copy of them
+    "设置", "关于", "版本", "作者", "更新", "隐私",
+    "不联网、不收集任何数据",
+    # the sleep record under 禁止休眠: a number the app keeps, not a reminder
+    "次", "休眠记录", "还没开启禁止休眠",
+    "自 %s 起", "还没有休眠", "最近 %s，%s",
+    "睡了 %d 分钟", "睡了 %d 小时 %d 分钟",
+    "知道了",
     "限制充电", "达上限停止充电，降到下限恢复充电，区间滞回", "上限", "下限",
-    "禁止休眠", "系统不休眠，保持网络在线", "指标", "窗口",
+    "禁止休眠", "系统不休眠，保持网络在线", "窗口", "实时采集", "图形化",
+    "图形化已关闭", "实时采集已关闭",
     "背景", "语言", "暗色", "亮色", "跟随系统", "采样间隔", "健康度",
     "电源", "USB类型", "电压(V)", "功率(W)", "电流", "温度(°C)",
     "极值", "最大", "限制", "已连接", "未连接", "充电中", "未充电", "未知",
     "现在", "选择上方指标以显示曲线", "USB 类型说明",
-    "未知：未识别，通常是没插线", "电电", "跟随系统",
+    "未知：未识别，通常是没插线", "跟随系统",
 )
 
 # the GTK app writes its tick formats as Python format specs; Kotlin has only
@@ -322,13 +364,13 @@ class ChartTest(SourceTest):
         nothing) and the interval takes the room they free -- the chart row is
         left with 窗口, as it was."""
         panel = kotlin("Panel.kt")
-        status = re.search(r"fun StatusSection\(.*?\n    }\n}", panel, re.S).group(0)
+        status = re.search(r"fun StatusRows\(.*?\n    }\n}", panel, re.S).group(0)
         self.assertHas(status, 'tr("采样间隔")', "电源 row")
         self.assertHas(status, "ChipPicker(", "电源 row")
         self.assertHas(status, "Spacer(Modifier.weight(1f))", "电源 row")
         # the three values are packed, not spread over equal weights
         self.assertLacks(status, "Modifier.weight(1f))\n            ChargedValue")
-        chart = re.search(r"fun ChartSection\(.*?\n}", panel, re.S).group(0)
+        chart = re.search(r"fun ChartRows\(.*?\n    }\n}", panel, re.S).group(0)
         self.assertHas(chart, 'tr("窗口")', "chart row")
         self.assertLacks(chart, "SAMPLES", "the interval left the chart row")
 
@@ -337,7 +379,7 @@ class ChartTest(SourceTest):
         two states carry the title's own weight."""
         panel = kotlin("Panel.kt")
         self.assertHas(panel, 'StatusRow(tr("电源"), fitTitle = true, titleSize = sc.big)')
-        status = re.search(r"fun StatusSection\(.*?\n    }\n}", panel, re.S).group(0)
+        status = re.search(r"fun StatusRows\(.*?\n    }\n}", panel, re.S).group(0)
         self.assertEqual(status.count("bold = true"), 2, "plugged and charging")
         self.assertHas(panel, "fontWeight = if (bold) FontWeight.Bold")
         gtk = read(ROOT, "chargecap")
@@ -416,7 +458,11 @@ class ChartTest(SourceTest):
         self.assertHas(battery, "val due = intervalMs <= SAMPLE_MS || now - storedAt >= intervalMs")
         self.assertHas(battery, "if (now - publishedAt >= SAMPLE_MS)")
         self.assertHas(battery, "delay(minOf(SAMPLE_MS, intervalMs)")
-        self.assertHas(kotlin("MainActivity.kt"), "Monitor.intervalMs = prefs.sampleMs.toLong()")
+        # the interval is the monitor's own clock, set when it starts and again
+        # only when the user moves the chip (through the state)
+        self.assertHas(battery, "fun start(context: Context, everyMs: Long = SAMPLE_MS)")
+        self.assertHas(battery, "intervalMs = everyMs")
+        self.assertHas(kotlin("AppState.kt"), "Monitor.intervalMs = ms.toLong()")
         self.assertHas(kotlin("Prefs.kt"), 'store.getInt("sample_ms", DEFAULT_SAMPLE_MS)')
 
     def test_sample_rate_and_history_match_the_gtk_app(self):
@@ -440,14 +486,20 @@ class ChartTest(SourceTest):
         self.assertHas(src, "PTS_PER_PX = 2")
         self.assertHas(src, "GRID_DIVS = 5")
         self.assertHas(src, "floatArrayOf(0f, 0.25f, 0.5f, 0.75f, 1f)")
-        self.assertHas(src, "30.dp")            # one Y-axis column
+        # the axis columns are measured from what they draw, not fixed
+        self.assertHas(src, "fun columnWidth(m: Metric): Float")
+        self.assertHas(src, "val widths = sel.associate { it.key to columnWidth(it) }")
+        self.assertLacks(src, "colW")
         self.assertHas(src, "0.6.dp")           # curve thickness
         self.assertHas(src, "0.5.dp")           # grid, thinner than the curve
         self.assertEqual(gui_class_constant("TICKS"),
                          (0.0, 0.25, 0.5, 0.75, 1.0))
         self.assertEqual(gui_class_constant("GRID_DIVS"), 5)
         self.assertEqual(gui_class_constant("PTS_PER_PX"), 2)
-        self.assertEqual(gui_class_constant("COL_W"), 30)
+        # ... and the GTK chart does the same, with no fixed column
+        gtk = read(ROOT, "chargecap")
+        self.assertIn("def _column_width(self, cr, key, rng):", gtk)
+        self.assertNotIn("COL_W", gtk)
         self.assertLess(gui_class_constant("GRID_W"),
                         gui_class_constant("LINE_W"))
 
@@ -455,9 +507,9 @@ class ChartTest(SourceTest):
         """Both charts open a flat signal out to +-0.5, so it is not a hairline
         on an invisible axis."""
         src = kotlin("Chart.kt")
-        self.assertHas(src, "if (hi - lo < 1e-9f) {")
-        self.assertHas(src, "lo -= 0.5f")
-        self.assertHas(src, "hi += 0.5f")
+        self.assertHas(src, "if (b - a < 1e-9f) {")
+        self.assertHas(src, "a -= 0.5f")
+        self.assertHas(src, "b += 0.5f")
 
     def test_time_labels_use_the_gtk_apps_format(self):
         src = kotlin("Chart.kt")
@@ -572,26 +624,26 @@ class PanelTest(SourceTest):
 
     def test_the_sections_are_boxed_like_the_gtk_apps_groups(self):
         panel = kotlin("Panel.kt")
-        self.assertHas(panel, "private fun Section(")
+        self.assertHas(panel, "fun Section(")
         self.assertHas(panel, "surfaceContainerHigh")
-        self.assertHas(panel, "private fun RowDivider()")
+        self.assertHas(panel, "fun RowDivider()")
         self.assertHas(panel, "HorizontalDivider(")
-        # every part of the panel is one of those boxes
-        for section in ("LimitsSection", "SleepSection", "StatusSection",
-                        "ChartSection"):
+        # every part of the panel is one of those boxes; the table and the
+        # chart now share the one LiveSection card
+        for section in ("LimitsSection", "SleepSection", "LiveSection"):
             body = re.search(r"fun %s\(.*?\n\}" % section, panel, re.S).group(0)
             with self.subTest(section=section):
                 self.assertHas(body, "Section(", section)
-        # ... and the status table separates its rows the way Adw does
-        status = re.search(r"fun StatusSection\(.*?\n\}", panel, re.S).group(0)
+        # ... and the status rows separate themselves the way Adw does
+        status = re.search(r"fun StatusRows\(.*?\n    }\n}", panel, re.S).group(0)
         self.assertGreaterEqual(status.count("RowDivider()"), 4)
 
     def test_the_metric_row_and_the_window_picker_share_one_line(self):
         """The GTK app puts the metric buttons and the window picker on one row
         (buttons left, picker right, a spacer between) -- which is what lets the
         whole panel, chart included, fit a phone screen without scrolling."""
-        chart = re.search(r"fun ChartSection\(.*?\n\}", kotlin("Panel.kt"), re.S).group(0)
-        body = chart[chart.index("Section(tr(\"指标\"))"):]
+        chart = re.search(r"fun ChartRows\(.*?\n    }\n}", kotlin("Panel.kt"), re.S).group(0)
+        body = chart[chart.index("Column {"):]
         self.assertHas(body, "Row(verticalAlignment = Alignment.CenterVertically)")
         self.assertHas(body, "Spacer(Modifier.weight(1f))")
         self.assertLess(body.index("MetricButton("), body.index("ChipPicker("))
@@ -620,16 +672,7 @@ class PanelTest(SourceTest):
         self.assertHas(theme, "entries.firstOrNull { it.tag == tag } ?: DARK")
         self.assertHas(kotlin("Prefs.kt"), "Theme.of(store.getString(\"theme\", null))")
         # the scheme is applied by the theme, not by the system's
-        self.assertHas(kotlin("MainActivity.kt"), "AppTheme(theme = theme)")
-
-    def test_the_background_button_sits_left_of_the_language_one(self):
-        """Compose lays a Row out left to right, so the background has to come
-        first in the header's actions."""
-        app = kotlin("MainActivity.kt")
-        actions = app[app.index("actions = {"):]
-        actions = actions[:actions.index("},", actions.index("LanguageButton"))]
-        self.assertLess(actions.index("BackgroundButton(theme)"),
-                        actions.index("LanguageButton(lang)"))
+        self.assertHas(kotlin("MainActivity.kt"), "AppTheme(theme = state.theme)")
 
     def test_the_hints_describe_this_platform(self):
         """Where the two platforms differ the notes are the Android app's own:
@@ -647,6 +690,1018 @@ class PanelTest(SourceTest):
         for gtk_only in ("systemd-inhibit", "SDP", "DCP", "CDP", "logind"):
             with self.subTest(gtk_only=gtk_only):
                 self.assertLacks(shown, gtk_only)
+
+
+class NotifyPageTest(SourceTest):
+    """The 通知 page -- the screen the app opens on -- and 设置, the gear holding
+    the two screens only the system owns.  Android has 通知 first (the GTK app has
+    no counterpart yet, see TODO.md); the panel it does draw is the page beside
+    it, 其他.
+
+    The three screens are Pages.kt, what they read and write is AppState.kt (over
+    Prefs.kt), and the live sample is Battery.kt's one monitor: these tests keep
+    the layers where they are as much as they keep the wording."""
+
+    def header(self):
+        return re.search(r"private fun AppHeader\(.*?\n\}", kotlin("MainActivity.kt"),
+                         re.S).group(0)
+
+    def page(self):
+        return re.search(r"fun NotifyPage\(.*?\n\}", kotlin("Pages.kt"),
+                         re.S).group(0)
+
+    def row(self):
+        return re.search(r"private fun NotifyRow\(.*?\n\}", kotlin("Pages.kt"),
+                         re.S).group(0)
+
+    def panel(self):
+        return re.search(r"fun PanelPage\(.*?\n\}", kotlin("Pages.kt"),
+                         re.S).group(0)
+
+    def settings(self):
+        return re.search(r"fun SettingsPage\(.*?\n\}", kotlin("Pages.kt"),
+                         re.S).group(0)
+
+    def state(self):
+        return kotlin("AppState.kt")
+
+    def branches(self):
+        """The when (page) branches, in the order they are drawn: the two pages
+        under the shared header, then 设置."""
+        app = kotlin("MainActivity.kt")
+        two = app.index("Page.NOTIFY, Page.OTHER -> Scaffold(")
+        settings = app.index("Page.SETTINGS -> Scaffold(")
+        return app[two:settings], app[settings:]
+
+    # ---- the frame: two pages in the header, and the gear ------------------
+
+    def test_the_two_pages_sit_side_by_side_in_the_header(self):
+        """通知, the page the app opens on, and 其他, the panel the GTK app
+        draws -- where a title would otherwise be."""
+        app = kotlin("MainActivity.kt")
+        self.assertHas(self.state(), "enum class Page { NOTIFY, OTHER, SETTINGS }")
+        self.assertHas(self.state(), "var page by mutableStateOf(Page.NOTIFY)")
+        self.assertHas(self.header(), "PageTabs(state)")
+        tabs = re.search(r"private fun PageTabs\(.*?\n\}", app, re.S).group(0)
+        for label in ("通知", "高级"):
+            with self.subTest(label=label):
+                self.assertHas(tabs, f'"{label}"')
+        # the page you are on is the one written solid, on its own background
+        self.assertHas(tabs, "fontWeight = if (here) FontWeight.Bold")
+        self.assertHas(tabs, ".background(")
+        self.assertHas(tabs, "primaryContainer")
+
+    def test_the_theme_and_the_language_are_a_pair_before_the_gear(self):
+        """Left to right: the two pages, then the theme and the language, then
+        设置 alone on the far right."""
+        header = self.header()
+        for first, second in (
+            ("PageTabs(state)",
+             "BackgroundButton(state.theme, state::setTheme)"),
+            ("BackgroundButton(state.theme, state::setTheme)",
+             "LanguageButton(state.lang, state::setLang)"),
+            ("LanguageButton(state.lang, state::setLang)",
+             "SettingsButton { state.show(Page.SETTINGS) }"),
+        ):
+            with self.subTest(first=first):
+                self.assertLess(header.index(first), header.index(second))
+        # a couple of characters each, in a box the size of what is in them: a
+        # TextButton's minimum width is what held the pair apart
+        app = kotlin("MainActivity.kt")
+        self.assertHas(app, "private fun HeaderButton(")
+        # the language button is a door, not a label: it names the other one
+        self.assertHas(app, 'HeaderButton(if (Strings.effective == Lang.ZH) "EN" else "中")')
+        self.assertLacks(header, "TextButton(")
+        # ... and the gear is a gear, not another word
+        gear = re.search(r"private fun SettingsButton\(.*?\n\}", app, re.S).group(0)
+        self.assertHas(gear, "HeaderButton(" + chr(34) + chr(92) + "u2699")
+        self.assertHas(gear, "22.sp")
+
+    def test_the_notifications_are_the_default_page(self):
+        """The app opens on 通知; 其他 is the panel the GTK app draws, and 设置
+        is neither page's own."""
+        two, rest = self.branches()
+        self.assertHas(two,
+                       "if (state.page == Page.NOTIFY) NotifyPage(state, inset)")
+        self.assertHas(two, "else PanelPage(state, inset)")
+        self.assertHas(rest, "SettingsPage(inset)")
+        for section in ("LimitsSection()", "SleepSection(", "LiveSection("):
+            with self.subTest(section=section):
+                self.assertHas(self.panel(), section)
+        self.assertLacks(two, "LimitsSection()")
+        self.assertHas(kotlin("MainActivity.kt"), 'tr("设置")')
+
+    def test_back_walks_back_the_way_it_came(self):
+        """設置 remembers the page it was opened from; 其他 returns to 通知, and
+        from 通知 the phone's own back leaves the app."""
+        state = self.state()
+        self.assertHas(state, "var back = Page.NOTIFY")
+        self.assertHas(state, "if (target == Page.SETTINGS) back = page")
+        self.assertHas(state,
+                       "page = if (page == Page.SETTINGS) back else Page.NOTIFY")
+        main = kotlin("MainActivity.kt")
+        self.assertHas(main,
+                       "BackHandler(enabled = state.page != Page.NOTIFY) { state.leave() }")
+        self.assertHas(main, "TextButton(onClick = { state.leave() })")
+
+    # ---- the framework: one state, one reader ------------------------------
+
+    def test_every_screen_is_a_function_of_the_one_state(self):
+        """A page takes AppState and nothing else: it reads what it shows and
+        writes through the setters, so no screen re-plumbs anything."""
+        pages = kotlin("Pages.kt")
+        for page in ("NotifyPage", "PanelPage"):
+            with self.subTest(page=page):
+                self.assertHas(pages, f"fun {page}(state: AppState")
+        self.assertHas(pages, "fun SettingsPage(inset: PaddingValues)")
+        # the activity keeps no stored value of its own any more
+        main = kotlin("MainActivity.kt")
+        self.assertLacks(main, "mutableStateOf(prefs")
+        self.assertHas(main, "val state = remember { AppState(prefs, inhibitor) }")
+
+    def test_the_low_level_read_is_one_place(self):
+        """The battery is sampled once, by the monitor, and the screens read it
+        through the state: a page that collected its own would be a second
+        reader and a second clock.  The process-level readers -- the rules'
+        notifier and the voice's endless count -- are not pages and do not sample
+        either; they listen to the one flow."""
+        self.assertHas(self.state(), "Monitor.state")
+        self.assertHas(self.state(), "Monitor.buffer")
+        self.assertHas(self.state(), "Monitor.intervalMs")
+        for name in SOURCES:
+            if name in ("Battery.kt", "AppState.kt", "Notifications.kt",
+                        "Voice.kt"):
+                continue
+            for reading in ("Monitor.state", "Monitor.buffer",
+                            "Monitor.intervalMs"):
+                with self.subTest(name=name, reading=reading):
+                    self.assertLacks(code_only(kotlin(name)), reading, name)
+        # the notifier's one read is its wire from the samples, inside the rules
+        wire = re.search(r"fun startNotifier\(.*?\n\}",
+                         kotlin("Notifications.kt"), re.S).group(0)
+        self.assertHas(wire, "Monitor.state.collect")
+        # the sampling starts once, with the process, not with a page
+        self.assertHas(kotlin("MainActivity.kt"),
+                       "Monitor.start(applicationContext, prefs.sampleMs.toLong())")
+
+    def test_a_new_notification_is_one_line_in_the_table(self):
+        """NOTIFICATIONS says what a notification is -- key, words, unit, range
+        -- and the page loops over it while Prefs keys off it, so the next one is
+        one line and nothing else."""
+        table = re.search(r"val NOTIFICATIONS = listOf\((.*?)\n\)",
+                          self.state(), re.S).group(1)
+        self.assertEqual(re.findall(r'Notification\(\s*"(\w+)"', table),
+                         ["done", "low", "plugged", "unplugged", "charging",
+                          "idle", "hot", "cold", "vhigh", "vlow", "iin",
+                          "drain", "power"])
+        for default in ("100", "10", "45", "-20", "4300", "3400", "3000",
+                        "1000", "20"):
+            with self.subTest(default=default):
+                self.assertHas(table, default)
+        # one loop over the table, filtered into the page's groups
+        group = re.search(r"private fun NotifyGroup\(.*?\n\}", kotlin("Pages.kt"),
+                          re.S).group(0)
+        self.assertHas(group, "NOTIFICATIONS.filter { it.key in keys }")
+        self.assertHas(group, "NotifyRow(state, n)")
+        self.assertEqual(kotlin("Pages.kt").count("NotifyRow(state, n)"), 1)
+        # one key per notification, and every part of it is stored under it
+        prefs = kotlin("Prefs.kt")
+        for stored in ('"notify_$key"', '"notify_${key}_at"',
+                       '"notify_${n.key}_kind"', '"notify_${n.key}_times"',
+                       '"notify_${n.key}_gap"'):
+            with self.subTest(stored=stored):
+                self.assertHas(prefs, stored)
+
+    # ---- what the page says, and what it stores ---------------------------
+
+    def test_every_switch_waits_to_be_asked(self):
+        """A fresh install arms nothing: the master switch decides whether
+        anything fires at all, and each notification is its owner's own choice,
+        so turning the master on does not start a page of reminders.  The
+        discharge one still reads the size of a discharge -- the reading is
+        signed, so charging is not a drain."""
+        table = re.search(r"val NOTIFICATIONS = listOf\((.*?)\n\)",
+                          kotlin("AppState.kt"), re.S).group(1)
+        self.assertLacks(table, "onByDefault")
+        self.assertHas(table,
+                       '"drain", { tr("放电电流过高") }, { tr("高于") }, " mA", 1000, 100, 0, 5000')
+        self.assertHas(table, "s.currentA?.let { -(it * 1000.0).toFloat() - at } ?: -1000f")
+        self.assertHas(kotlin("AppState.kt"), "prefs.notifyItem(it.key)")
+        self.assertHas(kotlin("Prefs.kt"),
+                       'fun notifyItem(key: String): Boolean = store.getBoolean("notify_$key", false)')
+        self.assertHas(kotlin("Strings.kt"), '"放电电流过高" to "High discharge current"')
+
+    def test_the_master_switch_is_off_until_it_is_turned_on(self):
+        self.assertHas(kotlin("Prefs.kt"), 'store.getBoolean("notify", false)')
+        self.assertHas(self.page(), 'SwitchRow(tr("通知开关")')
+
+    def test_the_notification_page_carries_no_notes(self):
+        """Four rows per notification as it is, and every one of them says what
+        it is -- so nothing is written under them."""
+        for part in (self.page(), self.row()):
+            with self.subTest(part=part.split("(")[0]):
+                self.assertLacks(part, "subtitle")
+        # the two rows that leave the app keep theirs
+        self.assertHas(self.settings(), "LinkRow(tr(")
+
+    def test_a_notification_arrives_as_a_voice_unless_asked(self):
+        prefs = kotlin("Prefs.kt")
+        self.assertHas(prefs, 'BANNER("banner"), VOICE("voice")')
+        self.assertHas(prefs, "entries.firstOrNull { it.tag == tag } ?: VOICE")
+        self.assertHas(kotlin("AppState.kt"), "answers[n.key] ?: Answer.FRESH")
+        self.assertHas(kotlin("Prefs.kt"), "val FRESH = Answer(NotifyKind.VOICE, 1, DEFAULT_GAP)")
+        for label in ("横幅", "语音"):
+            with self.subTest(label=label):
+                self.assertHas(kotlin("Pages.kt"), f'tr("{label}")')
+        # arriving twice over is gone: the page offers one or the other
+        self.assertLacks(prefs, "BOTH")
+        self.assertLacks(kotlin("Pages.kt"), "语音 + 横幅")
+
+    def test_every_notification_has_a_switch_a_number_and_a_type(self):
+        """All three are the notification's own -- nothing on this page is a
+        page-wide setting, which is why they all go through the table."""
+        row = self.row()
+        for part in ("SwitchStepperRow(", "NotifyKindRow("):
+            with self.subTest(part=part):
+                self.assertHas(row, part)
+        state = self.state()
+        for member in ("fun itemOn(", "fun setItem(", "fun answerOf(",
+                       "fun setAnswer(", "fun at(", "fun setAt(", "fun step("):
+            with self.subTest(member=member):
+                self.assertHas(state, member)
+        # every row stays live: the master switch is the gate, and it is not a
+        # row that dims the ones under it
+        # the row wears the short word; the sentence it says keeps the name
+        for line in ("title = n.short(),", "checked = state.itemOn(n),",
+                     "value = state.at(n),", "enabled = live,",
+                     "onCheck = { state.setItem(n, it) },",
+                     "onChange = { state.setAt(n, it) },"):
+            with self.subTest(line=line):
+                self.assertHas(row, line)
+        # the 达 / 低于 / 高于 words are gone: the title says which way it reads
+        for word in ("n.label()", "达", "低于", "高于"):
+            with self.subTest(word=word):
+                self.assertLacks(row, word)
+        self.assertHas(row, "NotifyKindRow(")
+        # 通知方式 and 次数 share one row, and both are the whole
+        # notification's: a banner repeats as well as a voice
+        self.assertHas(row, "answer = state.answerOf(n),")
+        self.assertHas(row, "onAnswer = { picked ->")
+        self.assertLacks(row, "takeIf { state.kindOf(n)")
+        self.assertLacks(kotlin("Pages.kt"), "NotifyTimesRow")
+        # 通知开关 off dims every row under it and changes none of them
+        self.assertHas(row, "val live = state.notify")
+
+    def test_the_master_is_a_size_up_from_the_rows_under_it(self):
+        """通知开关 is the page's one gate: a bigger word and a full-size switch,
+        with the four it gates a step down -- so which switch is which needs no
+        reading."""
+        self.assertHas(self.page(), "master = true)")
+        panel = kotlin("Panel.kt")
+        self.assertHas(panel, "master: Boolean = false,")
+        self.assertHas(panel, "(if (master) s.heading + 4f else s.heading).sp")
+        self.assertHas(panel, ".heightIn(min = if (master) 56.dp else 48.dp)")
+        self.assertHas(panel, "Modifier.scale(if (master) 1f else 0.8f)")
+        # the switch is drawn smaller, its touch target is not
+        self.assertHas(kotlin("Panel.kt"), "Switch(")
+
+    def test_a_number_can_be_typed_as_well_as_stepped(self):
+        """The value is a field you tap and type into, with the same − and +
+        beside it: the keyboard's done -- or looking away -- is when it is
+        read, and what the field then shows is what was kept."""
+        panel = kotlin("Panel.kt")
+        field = re.search(r"private fun NumberField\(.*?\n\}", panel, re.S).group(0)
+        self.assertHas(field, "BasicTextField(")
+        self.assertHas(field, "state = field,")
+        self.assertHas(field, "KeyboardType.Number")
+        self.assertHas(field, "ImeAction.Done")
+        self.assertHas(field, "onFocusChanged { if (!it.isFocused) commit() }")
+        # not a number puts the old one back; a number goes through the check
+        self.assertHas(field, 'field.text.toString().trim().toIntOrNull()')
+        self.assertHas(field, "val kept = if (typed == null) value else onCommit(typed)")
+        row = re.search(r"internal fun StepperRow\(.*?\n\}", panel, re.S).group(0)
+        self.assertHas(row, 'StepButton("−", enabled) { onChange(value - step) }')
+        self.assertHas(row, 'StepButton("+", enabled) { onChange(value + step) }')
+        # the check itself is one place, and a step takes the same road as a
+        # typed number
+        self.assertHas(self.state(),
+                       "fun step(n: Notification, direction: Int) = setAt(n, at(n) + direction * n.step)")
+
+    def test_a_number_lands_inside_its_own_range(self):
+        """电量 is a percentage, a temperature is not, and neither is a
+        voltage, a current or a power: each one carries its own range and its
+        own step, so a press moves 5 % or 50 mV as the reading deserves."""
+        table = re.search(r"val NOTIFICATIONS = listOf\((.*?)\n\)",
+                          self.state(), re.S).group(1)
+        for line in ('"%", 100, 1, 0, 100', '"%", 10, 1, 0, 100',
+                     '" °C", 45, 1, -60, 100', '" °C", -20, 1, -60, 100',
+                     # millivolts, milliamps and watts are not percentages
+                     '" mV", 4300, 100, 3000, 5000', '" mV", 3400, 100, 2500, 4500',
+                     '" mA", 3000, 100, 0, 10000',
+                     '" mA", 1000, 100, 0, 5000', '" W", 20, 1, 0, 100'):
+            with self.subTest(line=line):
+                self.assertHas(table, line)
+        state = self.state()
+        self.assertHas(state, "fun inside(reading: Int): Int = reading.coerceIn(low, high)")
+        self.assertHas(state, "fun setAt(n: Notification, reading: Int): Int {")
+        self.assertHas(state, "val inside = keepApart(n, reading)")
+        self.assertHas(state, "return inside")
+
+    def test_the_two_charge_lines_never_cross(self):
+        """充电完成 has to stay above 电量过低, so each one's range stops at the
+        other: typed or stepped, full at 55% is never below empty at 55%."""
+        state = self.state()
+        self.assertHas(state, 'above = "low",')
+        body = re.search(r"private fun keepApart\(.*?\n    \}", state, re.S).group(0)
+        self.assertHas(body, "val floor = other?.let { at(it) + 1 }")
+        self.assertHas(body,
+                       "val ceiling = NOTIFICATIONS.firstOrNull { it.above == n.key }?.let { at(it) - 1 }")
+        self.assertHas(body, "val lo = maxOf(n.low, floor ?: n.low)")
+        self.assertHas(body, "val hi = minOf(n.high, ceiling ?: n.high)")
+        self.assertHas(body, "reading.coerceIn(lo, hi)")
+
+    def test_the_voice_count_is_the_voices_own(self):
+        """通知次数 belongs to a voice: the counts 1次 to 10次 for all of them,
+        and for the two with something to wait for their own endless chip -- 电量过低
+        until the plug goes in, 充电完成 until the cable comes out.  A banner is
+        one banner, so the row is not on the page unless there is a voice."""
+        state = self.state()
+        self.assertHas(state, "val TIMES: List<Pair<Int, () -> String>> = listOf(")
+        for line in ('1 to { tr("1次") }', '2 to { tr("2次") }',
+                     '3 to { tr("3次") }', '5 to { tr("5次") }',
+                     '10 to { tr("10次") }'):
+            with self.subTest(line=line):
+                self.assertHas(state, line)
+        self.assertHas(state, "val TIMES: List<Pair<Int, () -> String>> = listOf(")
+        # ... and the endless one comes from the row that has something to wait
+        self.assertHas(state, "TIMES + listOfNotNull(until?.let { 0 to it.label })")
+        self.assertHas(state, "fun Notification.timesLabel(count: Int): String =")
+        # the count is one field of the answer, and Prefs keeps it under the
+        # same key the row always wrote
+        self.assertHas(kotlin("Prefs.kt"),
+                       'store.getInt("notify_${n.key}_times", 1)')
+        # a count is not a line: moving it does not re-arm the rules
+        body = re.search(r"fun setAnswer\(.*?\n    \}", state, re.S).group(0)
+        self.assertHas(body, "arm(again = kindMoved)")
+
+    def test_the_readings_are_grouped_by_kind(self):
+        """温度, 电压, 电流 and 功率 are four different readings, so each is its
+        own group rather than one pile called 其他; the plug and the charging
+        state sit between the battery's own charge and them."""
+        page = kotlin("Pages.kt")
+        groups = re.search(r"private val GROUPS = listOf\((.*?)\n\)", page,
+                           re.S).group(1)
+        self.assertEqual(re.findall(r'Group\(\{ tr\("(\w+)"\) \}', groups),
+                         ["基础功能", "电源", "充电", "温度", "电压", "电流", "功率"])
+        # every notification is in exactly one group, in the table's order
+        table = re.search(r"val NOTIFICATIONS = listOf\((.*?)\n\)",
+                          self.state(), re.S).group(1)
+        keys = re.findall(r'Notification\(\s*"(\w+)"', table)
+        listed = re.findall(r'setOf\(([^)]*)\)', groups)
+        seen = [k.strip().strip('"') for line in listed for k in line.split(",")]
+        self.assertEqual(sorted(seen), sorted(keys))
+        self.assertEqual(len(seen), len(set(seen)))
+        # the page draws them in that order, and no group is left out
+        self.assertHas(page, "for (group in GROUPS) NotifyGroup(state, group.title(), group.keys)")
+
+    def test_a_state_row_has_no_number_to_step(self):
+        """电源连接 and the other three states are on or off, not readings
+        with a line: their row is the name, the switch, and the answers under
+        it -- no field, no − and +."""
+        table = re.search(r"val NOTIFICATIONS = listOf\((.*?)\n\)",
+                          self.state(), re.S).group(1)
+        self.assertEqual(table.count("numbered = false"), 4)
+        self.assertHas(kotlin("AppState.kt"), "val numbered: Boolean = true,")
+        row = self.row()
+        self.assertHas(row, "if (n.numbered) {")
+        self.assertHas(row, "SwitchStepperRow(")
+        self.assertHas(row, "} else {")
+        self.assertHas(row, "SwitchRow(")
+
+    def test_turning_the_master_on_asks_what_the_system_allows(self):
+        """通知开关 on is where a reminder can be lost before it is posted: the
+        channel may be silenced and the system may stop the app, so both are
+        read as soon as the switch is on -- after the permission answer, never
+        while its dialog is still open -- and 设置 is one tap away."""
+        page = self.page()
+        self.assertHas(page, "var missing by remember { mutableStateOf(emptyList<Limit>()) }")
+        self.assertHas(page, "RequestPermission()) { missing = limits(context) }")
+        self.assertHas(page, "!on -> missing = emptyList()")
+        self.assertHas(page, "else -> missing = limits(context)")
+        self.assertHas(page, "state.show(Page.SETTINGS)")
+        self.assertHas(kotlin("Pages.kt"), "private fun Limit.line(): String")
+        system = kotlin("SystemSettings.kt")
+        self.assertHas(system, "fun limits(context: Context): List<Limit>")
+        self.assertHas(system, "notifications.areNotificationsEnabled()")
+        self.assertHas(system, "IMPORTANCE_NONE")
+        self.assertHas(system, "power?.isIgnoringBatteryOptimizations(context.packageName)")
+
+    def test_a_row_wears_a_short_word_and_the_sentence_keeps_the_name(self):
+        """电源连接 reads 连接 under the 电源 heading, 温度过高 reads 过高 -- but
+        the banner and the voice still say the full sentence."""
+        table = re.search(r"val NOTIFICATIONS = listOf\((.*?)\n\)",
+                          self.state(), re.S).group(1)
+        for short in ("连接", "断开", "过高", "过低", "充电过高", "放电过高"):
+            with self.subTest(short=short):
+                self.assertHas(table, f'short = {{ tr("{short}") }}')
+        # ... and the sentence comes from the full title
+        self.assertHas(self.state(),
+                       'if (numbered) "${title()} ${value(reading)}" else title()')
+        # the row asks for the short one
+        self.assertHas(self.row(), "title = n.short(),")
+
+    def test_the_master_switch_dims_the_rows_it_gates(self):
+        """通知开关 off is a gate, not a reset: the rows dim and stop taking
+        input, and keep every answer they hold."""
+        row = self.row()
+        self.assertHas(row, "val live = state.notify")
+        self.assertHas(row, "enabled = live,")
+        self.assertHas(kotlin("Panel.kt"), "enabled: Boolean = true,")
+        # a chip too, and the answer labels beside it
+        self.assertHas(kotlin("Panel.kt"), "if (enabled) open = true")
+        self.assertHas(kotlin("Pages.kt"),
+                       "private fun AnswerTitle(text: String, enabled: Boolean)")
+
+    def test_the_three_answers_are_one_value(self):
+        """通知方式, 次数 and 间隔 are one answer -- kind, count, gap -- so the
+        page's chips and the reminder's loop read the same value and a pick
+        can never leave one of the three stale.  The stored keys stay where
+        they were, so an install that already has answers keeps them."""
+        prefs = kotlin("Prefs.kt")
+        self.assertHas(prefs, "data class Answer(val kind: NotifyKind, val times: Int, val gap: Int)")
+        self.assertHas(prefs, "fun notifyAnswer(n: Notification): Answer = Answer.of(")
+        self.assertHas(prefs, "fun setNotifyAnswer(n: Notification, answer: Answer) {")
+        self.assertHas(prefs, "if (n.times().any { it.first == times }) times else FRESH.times")
+        self.assertHas(prefs, "if (GAPS.any { it.second == gap }) gap else FRESH.gap")
+        state = self.state()
+        self.assertHas(state, "private val answers = mutableStateMapOf<String, Answer>()")
+        self.assertHas(state, "fun answerOf(n: Notification): Answer = answers[n.key] ?: Answer.FRESH")
+        self.assertHas(state, "fun setAnswer(n: Notification, answer: Answer) {")
+        # the three old setters are gone: three memories could disagree
+        for gone in ("fun kindOf(", "fun setKind(", "fun timesOf(", "fun setTimes(",
+                     "fun gapOf(", "fun setGap("):
+            with self.subTest(gone=gone):
+                self.assertLacks(state, gone)
+        # one chip-drawing path, and the fixed 0 is its own branch of it
+        self.assertHas(kotlin("Pages.kt"), "private fun <T> AnswerChip(")
+        self.assertHas(kotlin("Rules.kt"), "val answer: Answer,")
+
+    def test_the_three_chips_sit_in_columns(self):
+        """通知方式 starts at the same x on every row -- its column is as wide as
+        the widest chip it can draw -- the count sits right after its label, and
+        间隔 owns the far end of the row, so all three line up across
+        notifications whatever width the values happen to be."""
+        row = re.search(r"private fun NotifyKindRow\(.*?\n\}",
+                        kotlin("Pages.kt"), re.S).group(0)
+        self.assertHas(row, "val widestKind = remember(s, Strings.effective) {")
+        self.assertHas(row, "NotifyKind.entries.maxOf { k ->")
+        self.assertHas(row, "Box(Modifier.widthIn(min = kindColumn)) {")
+        # the rest of the row is 间隔's, so the count's width never moves it
+        self.assertHas(row, "Spacer(Modifier.weight(1f))")
+        after = row[row.index("Spacer(Modifier.weight(1f))"):]
+        self.assertHas(after, 'tr("间隔")')
+        # one notification has no gap, and the row still says so: 0, and a
+        # chip that opens nothing
+        self.assertHas(after, 'items = if (count == 1) null else GAPS,')
+        self.assertHas(after, 'label = if (count == 1) "0" else gapLabel(gap),')
+        # ... and the one helper that draws a chip with or without choices
+        page = kotlin("Pages.kt")
+        self.assertHas(page, "private fun <T> AnswerChip(")
+        self.assertHas(page, "if (items == null || current == null) {")
+        self.assertHas(page, "FixedChip(label)")
+        self.assertIn("else GAPS,", after)
+        self.assertHas(kotlin("Panel.kt"),
+                       "internal fun FixedChip(label: String) {")
+
+    def test_each_endless_count_waits_for_its_own_reading(self):
+        """直到开始充电 is 电量过低's -- a low charge is fixed by plugging in --
+        and 直到电源断开 is 充电完成's, since that is what a full battery is
+        waiting for.  The two temperatures have neither: they stop at 10次."""
+        table = re.search(r"val NOTIFICATIONS = listOf\((.*?)\n\)",
+                          self.state(), re.S).group(1)
+        self.assertEqual(table.count("until = Until("), 2)
+        self.assertHas(table, 'until = Until({ tr("直到开始充电") }, { s -> s.charging })')
+        self.assertHas(table, 'until = Until({ tr("直到电源断开") }, { s -> !s.plugged })')
+        # an endless count stored where there is none to wait for reads as
+        # once: the answer is clipped to the counts the notification offers
+        self.assertHas(kotlin("Prefs.kt"),
+                       "if (n.times().any { it.first == times }) times else FRESH.times")
+        self.assertHas(self.state(), "answers[n.key] = answer.inside(n)")
+        # ... and the reminder is told what stops it
+        wire = re.search(r"private fun remind\(.*?\n\}",
+                         kotlin("Notifications.kt"), re.S).group(0)
+        self.assertHas(wire, "if (now.times == 0 && now.n.until?.done(Monitor.state.value) == true)")
+
+    def test_switching_the_master_off_is_silent(self):
+        """通知开关 off means nothing arrives -- the 试听 included, since setting
+        something up is not a notification, and a reminder that is still being
+        said does not get to finish its minute."""
+        row = self.row()
+        self.assertHas(row, "if (state.notify && picked.kind == NotifyKind.VOICE &&")
+        body = re.search(r"fun setNotify\(.*?\n    \}", self.state(), re.S).group(0)
+        self.assertHas(body, "stopReminders()")
+        self.assertHas(body, "Voice.stop()")
+        notifier = kotlin("Notifications.kt")
+        self.assertHas(notifier, "fun stopReminders() {")
+        self.assertHas(notifier, "reminders.values.forEach { it.cancel() }")
+        voice = kotlin("Voice.kt")
+        self.assertHas(voice, "fun stop() {")
+        # ... and the engine's queue, which the coroutine does not own: a
+        # sentence already handed over would otherwise play to its end
+        self.assertHas(voice, "engine?.stop()")
+        self.assertHas(voice, "waiting = null")
+
+    def test_the_numbers_are_the_notifications_own(self):
+        """The panel's 上限 / 下限 are the daemon's: reading them here would tie
+        a notification to the charge window, which they must not be."""
+        page = self.page()
+        for borrowed in ("上限", "下限", "LimitsSection"):
+            with self.subTest(borrowed=borrowed):
+                self.assertLacks(page, borrowed)
+
+    def test_the_switches_are_the_stored_ones(self):
+        state = self.state()
+        for written in ("prefs.notify = on", "prefs.setNotifyItem(n.key, on)",
+                        "prefs.setNotifyAnswer(n, answers.getValue(n.key))",
+                        "prefs.setNotifyAt(n.key, inside)"):
+            with self.subTest(written=written):
+                self.assertHas(state, written)
+        # every stored part of a notification is read back through its key
+        for read in ("prefs.notifyItem(it.key)",
+                     "prefs.notifyAnswer(it)",
+                     "prefs.notifyAt(it.key, it.default)"):
+            with self.subTest(read=read):
+                self.assertHas(state, read)
+
+    def test_the_system_rows_lead_out_of_the_app(self):
+        """The two switches a notification needs that are not the app's: the
+        banner and its sound belong to the system's notification settings, and
+        autostart to a vendor screen.  Both leave the app from 设置, and 自启动
+        comes first -- it is the one no two phones file in the same place."""
+        page = self.settings()
+        self.assertHas(page, "LinkRow(")
+        self.assertHas(page, 'LinkRow(tr("自启动")')
+        self.assertHas(page, 'LinkRow(tr("通知横幅与声音")')
+        self.assertLess(page.index('LinkRow(tr("自启动")'),
+                        page.index('LinkRow(tr("通知横幅与声音")'))
+        self.assertHas(page, "openAutostartSettings(context)")
+        self.assertHas(page, "openNotificationSettings(context)")
+        # ... and the phone may keep them somewhere else entirely
+        self.assertHas(page, 'tr("各厂商的设置位置不一样，下面的按钮带你去找")')
+
+    def test_autostart_tries_the_vendors_then_the_apps_own_page(self):
+        src = kotlin("SystemSettings.kt")
+        # huawei first: this was written on one, and both of its screens answer
+        self.assertHas(src,
+                       '"com.huawei.systemmanager/'
+                       '.startupmgr.ui.StartupNormalAppListActivity"')
+        for vendor in ("com.miui.securitycenter", "com.coloros.safecenter",
+                       "com.oppo.safe", "com.vivo.permissionmanager",
+                       "com.samsung.android.lool", "com.meizu.safe"):
+            with self.subTest(vendor=vendor):
+                self.assertHas(src, vendor)
+        # every phone has this one, so a vendor that moved the screen still
+        # leaves the user somewhere useful
+        self.assertHas(src, "Settings.ACTION_APPLICATION_DETAILS_SETTINGS")
+        # and a screen that is not there is an answer, not a crash
+        self.assertHas(src, "catch (t: Throwable)")
+
+    def test_the_notification_row_opens_our_channels_own_page(self):
+        """The channel's page is the one with 横幅 / 声音 / 震动 on it; the app's
+        notification page and the app's own page are the doors after it."""
+        src = kotlin("SystemSettings.kt")
+        self.assertHas(src, "Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS")
+        self.assertHas(src, "Settings.EXTRA_CHANNEL_ID")
+        self.assertHas(src, "Settings.EXTRA_APP_PACKAGE")
+        self.assertHas(src, "Settings.ACTION_APP_NOTIFICATION_SETTINGS")
+        self.assertHas(src, "Settings.ACTION_APPLICATION_DETAILS_SETTINGS")
+        # the channel page is Android 8; below it only the app's own page
+        self.assertHas(src, "Build.VERSION_CODES.O) return openAppInfo(context)")
+
+    def test_the_channel_exists_before_the_first_notification(self):
+        """The system's 通知 page offers 横幅 / 声音 only once a channel exists,
+        and 设置's row promises exactly those switches -- so the channel is made
+        at launch, not with the first post."""
+        channel = kotlin("Notifications.kt")
+        self.assertHas(channel, 'const val NOTIFY_CHANNEL = "chargecap"')
+        self.assertHas(channel, "NotificationManager.IMPORTANCE_HIGH")
+        self.assertHas(channel, "createNotificationChannel(")
+        self.assertHas(kotlin("MainActivity.kt"), "createNotificationChannel(this)")
+
+    def test_the_banner_permission_is_asked_for_where_it_exists(self):
+        """Android 13+ asks before an app may post banners; before that the
+        manifest's permission is granted at install time."""
+        self.assertHas(read(MAIN, "AndroidManifest.xml"),
+                       "android.permission.POST_NOTIFICATIONS")
+        pages = kotlin("Pages.kt")
+        self.assertHas(pages, "ActivityResultContracts.RequestPermission()")
+        self.assertHas(pages, "Build.VERSION_CODES.TIRAMISU")
+        self.assertHas(pages, "askBanner.launch(")
+        self.assertHas(pages, "Manifest.permission.POST_NOTIFICATIONS")
+
+
+class SleepTest(SourceTest):
+    """系统休眠: the record under 禁止休眠, read off the clocks."""
+
+    def setUp(self):
+        self.src = kotlin("Sleep.kt")
+
+    def test_the_sleep_is_read_off_the_clocks(self):
+        """uptimeMillis stands still while the CPU is suspended, so the wall
+        clock's excess is the sleep inside one sample -- however fast or slow
+        the sampler was running."""
+        self.assertHas(kotlin("Battery.kt"),
+                       "Sleeps.tick(System.currentTimeMillis(), SystemClock.uptimeMillis())")
+        self.assertHas(self.src, "val slept = wall - lastWall - (uptime - lastUptime)")
+
+    def test_one_sleep_is_a_merged_stretch(self):
+        """A stretch of a minute or more is one 休眠, and awake time under two
+        minutes belongs to the stretch it interrupted -- a night of doze
+        punctuated by alarm wakeups is one event, not a hundred."""
+        self.assertHas(self.src, "const val MIN_SECS = 60")
+        self.assertHas(self.src, "const val MERGE_SECS = 120")
+        self.assertHas(self.src, "stretchMs >= MIN_SECS * 1000")
+        self.assertHas(self.src, "wall - stretchLast > MERGE_SECS * 1000")
+
+    def test_the_count_starts_at_the_last_turn_on_and_dies_with_the_boot(self):
+        """The count is the last 通知开关 turn-on's, not the phone's lifetime:
+        turning it on starts the record over, and a reboot -- elapsedRealtime
+        gone backwards -- clears it."""
+        self.assertHas(kotlin("AppState.kt"), "if (on) Sleeps.restart()")
+        # ... and that line is in 禁止休眠's setter, not the notifications'
+        inhibit = re.search(r"fun setInhibit\(.*?\n    \}",
+                            kotlin("AppState.kt"), re.S).group(0)
+        self.assertHas(inhibit, "if (on) Sleeps.restart()")
+        notify = re.search(r"fun setNotify\(.*?\n    \}",
+                           kotlin("AppState.kt"), re.S).group(0)
+        self.assertLacks(notify, "Sleeps.restart()")
+        self.assertHas(self.src, "anchor = System.currentTimeMillis()")
+        self.assertHas(self.src, "SystemClock.elapsedRealtime() < store.sleepElapsed")
+        body = re.search(r"fun start\(prefs: Prefs\).*?\n    \}", self.src, re.S).group(0)
+        self.assertHas(body, "count = 0")
+        # the record is stored, so a kill is not enough to lose it
+        for stored in ("sleep_anchor", "sleep_count", "sleep_naps", "sleep_elapsed"):
+            with self.subTest(stored=stored):
+                self.assertHas(kotlin("Prefs.kt"), f'"{stored}"')
+
+    def test_the_row_sits_under_the_promise(self):
+        """禁止休眠 promises the system will not sleep; the row under it is
+        where that can be caught.  It is a record, not a notification: no
+        switch, no 通知方式, no 次数, no 间隔 -- the count is the whole row, and
+        a tap opens the history it kept."""
+        panel = kotlin("Panel.kt")
+        section = re.search(r"fun SleepSection\(.*?\n\}", panel, re.S).group(0)
+        self.assertHas(section, 'SwitchRow(tr("禁止休眠")')
+        self.assertHas(section, "RowDivider()")
+        self.assertHas(section, "SleepRow()")
+        row = re.search(r"private fun SleepRow\(.*?\n\}", panel, re.S).group(0)
+        for absent in ("Switch(", "ChipPicker(", "通知方式", "次数", "间隔"):
+            with self.subTest(absent=absent):
+                self.assertLacks(row, absent)
+        self.assertHas(row, "AlertDialog(")
+        self.assertHas(row, 'tr("休眠记录")')
+        self.assertHas(row, '"${Sleeps.count}" + tr("次")')
+        self.assertHas(row, "Sleeps.line()")
+
+    def test_the_words_are_the_records_own(self):
+        for key in ("休眠记录", "还没开启禁止休眠", "还没有休眠",
+                    "自 %s 起", "最近 %s，%s", "睡了 %d 分钟",
+                    "睡了 %d 小时 %d 分钟", "次"):
+            with self.subTest(key=key):
+                self.assertHas(kotlin("Strings.kt"), f'"{key}"')
+
+
+class RulesTest(SourceTest):
+    """The rules: what the app does with the readings rather than draws.
+
+    A notification fires on the way in and stays quiet until the reading comes
+    back clear; it arrives as a banner, a voice or both; and all of it runs with
+    the process rather than with a page, so these tests are about the one
+    comparison, the one memory and the one wire from the monitor."""
+
+    def rules(self):
+        return kotlin("Rules.kt")
+
+    def notifier(self):
+        return kotlin("Notifications.kt")
+
+    def test_a_rule_fires_once_and_rearms_on_the_way_back(self):
+        src = self.rules()
+        # one comparison per sample, in the notification's own unit
+        self.assertHas(src, "fun past(s: Snapshot): Float = n.distance(s, at)")
+        self.assertHas(src, "fun crossed(s: Snapshot): Boolean = past(s) >= 0f")
+        # ... and back by its own step, so a value resting on the line says it
+        # once rather than twice a second
+        self.assertHas(src, "fun clear(s: Snapshot): Boolean = past(s) <= -n.step")
+        # the set is the memory of who has spoken, and add() is the test
+        self.assertHas(src,
+                       "rule.crossed(s) && spoken.add(rule.n.key) -> out.add(rule)")
+        self.assertHas(src,
+                       "!rule.crossed(s) && rule.clear(s) -> spoken.remove(rule.n.key)")
+
+    def test_a_new_line_starts_from_here(self):
+        """Any switch moving re-arms: the memory starts over, and the first look
+        after it learns where the readings are instead of saying so."""
+        src = self.rules()
+        self.assertHas(src, "private var current: List<Rule> = emptyList()")
+        self.assertHas(src, "fun arm(now: List<Rule>) = synchronized(this) {")
+        self.assertHas(src, "spoken.clear()")
+
+    def test_turning_a_switch_on_says_nothing_at_once(self):
+        """Arming is a look, not a word: 通知开关 (or one notification) turned
+        on -- or the app opened under one already on -- takes whatever is
+        already past its line as read, so only a crossing afterwards fires."""
+        src = self.rules()
+        self.assertHas(src, "private var seeding = true")
+        self.assertHas(src, "seeding = true")
+        self.assertHas(src, "if (seeding) {")
+        self.assertHas(src, "seeding = false")
+        self.assertHas(src, "if (rule.crossed(s)) spoken.add(rule.n.key)")
+        # ... and the seeding pass ends without firing anything
+        self.assertHas(src, "return@synchronized out")
+
+    def test_the_master_switch_leaves_nothing_to_watch(self):
+        state = kotlin("AppState.kt")
+        self.assertHas(state, "if (!notify) emptyList()")
+        self.assertHas(state,
+                       ".map { Rule(it, at(it), answerOf(it)) }")
+        # a switch re-arms; a stepper only moves where a line is
+        for setter in ("setNotify", "setItem"):
+            with self.subTest(setter=setter):
+                body = re.search(rf"fun {setter}\(.*?\n    \}}", state, re.S).group(0)
+                self.assertHas(body, "\n        arm()")
+        stepper = re.search(r"fun setAt\(.*?\n    \}", state, re.S).group(0)
+        self.assertHas(stepper, "arm(again = false)")
+        # the answer's one setter is both: a kind re-arms, a count or a gap
+        # only retunes
+        answer = re.search(r"fun setAnswer\(.*?\n    \}", state, re.S).group(0)
+        self.assertHas(answer, "val kindMoved = answer.kind != answerOf(n).kind")
+        self.assertHas(answer, "arm(again = kindMoved)")
+        # ... which is the whole point of the two: eight steps, no eight banners
+        rules = self.rules()
+        self.assertHas(rules, "fun retune(now: List<Rule>) = synchronized(this) {")
+        self.assertHas(rules, "fun arm(now: List<Rule>) = synchronized(this) {")
+
+    def test_each_notification_carries_its_own_comparison(self):
+        """The table stays the one place a notification is defined: its line and
+        the test for it are the same row."""
+        table = re.search(r"val NOTIFICATIONS = listOf\((.*?)\n\)",
+                          kotlin("AppState.kt"), re.S).group(1)
+        self.assertEqual(table.count("distance = {"), 13)
+        # 充电完成 means plugged in and there
+        self.assertHas(table, "if (s.plugged)")
+        self.assertHas(table, "at - (s.capacity ?: Int.MAX_VALUE).toFloat()")
+        self.assertHas(table, "((s.tempC ?: -273.0) - at).toFloat()")
+        # 温度过低 is the same reading the other way round, and an unknown
+        # temperature is far above any line rather than a false alarm
+        self.assertHas(table, "at - (s.tempC ?: 100.0).toFloat()")
+        # a voltage, a current and a power each read their own field, and a
+        # reading the phone does not publish is far away rather than an alarm
+        self.assertHas(table, "s.voltageV?.let { (it * 1000.0).toFloat() - at } ?: -1000f")
+        self.assertHas(table, "s.voltageV?.let { at - (it * 1000.0).toFloat() } ?: -1000f")
+        self.assertHas(table, "s.currentA?.let { (it * 1000.0).toFloat() - at } ?: -1000f")
+        self.assertHas(table, "s.powerW?.let { (abs(it)).toFloat() - at } ?: -1000f")
+        # the plug and the charging state are on or off rather than a number:
+        # +1 past the line, -1 clear, and the change is the news
+        for line in ("if (s.plugged) 1f else -1f", "if (s.plugged) -1f else 1f",
+                     "if (s.charging) 1f else -1f", "if (s.charging) -1f else 1f"):
+            with self.subTest(line=line):
+                self.assertHas(table, line)
+        # ... and the sentence comes off the same row: a state says itself,
+        # a reading says its number
+        state = kotlin("AppState.kt")
+        self.assertHas(state, "if (numbered) \"${title()} ${value(reading)}\" else title()")
+
+    def test_the_kind_decides_how_it_arrives(self):
+        """A banner posts or a voice speaks -- one or the other, from the same
+        loop, so every repeat arrives the way the first one did."""
+        wire = re.search(r"private fun remind\(.*?\n\}", self.notifier(), re.S).group(0)
+        self.assertHas(wire, "if (live.kind == NotifyKind.BANNER) {")
+        self.assertHas(wire, "post(context, live)")
+        self.assertHas(wire, "Voice.say(live.says(), queue = said > 0)")
+        self.assertHas(self.notifier(),
+                       "NotifyRules.sample(sample) { rule -> remind(app, rule) }")
+
+    def test_a_notification_repeats_at_its_own_gap(self):
+        """1次 says it once; 3次 says it again 间隔 later -- 2s unless asked
+        otherwise -- and an endless count keeps repeating until the rule's own
+        reading says it is over: the plug in for 电量过低, the cable out for
+        充电完成.  One reminder at a time, and it stops with the app."""
+        body = re.search(r"private fun remind\(.*?\n\}", self.notifier(), re.S).group(0)
+        self.assertHas(body, "reminders.remove(key)?.cancel()")
+        self.assertHas(body, "while (true) {")
+        self.assertHas(body, "delay(live.gapSecs * 1000L)")
+        self.assertHas(body, "if (live.times == 0 && live.n.until == null) return@launch")
+        self.assertHas(body, "if (live.times != 0 && said >= live.times) return@launch")
+        # a repeat is only news while the reading is still past the line
+        self.assertHas(body, "if (!now.crossed(Monitor.state.value)) return@launch")
+        self.assertHas(body, "Voice.say(live.says(), queue = said > 0)")
+        self.assertHas(kotlin("Voice.kt"),
+                       "if (queue) TextToSpeech.QUEUE_ADD else TextToSpeech.QUEUE_FLUSH")
+        # the rule is read again at every repeat, so a line moved or a switch
+        # thrown mid-count takes effect
+        self.assertHas(body, "val live = NotifyRules.rules.firstOrNull { it.n.key == key }")
+        self.assertHas(body, "val now = NotifyRules.rules.firstOrNull { it.n.key == key }")
+        # the count and the gap travel with the rule, from the page's chips
+        self.assertHas(self.rules(), "val answer: Answer,")
+        self.assertHas(self.rules(), "val times: Int get() = answer.times")
+        self.assertHas(self.rules(), "val gapSecs: Int get() = answer.gap")
+
+    def test_the_gaps_are_the_ones_the_page_offers(self):
+        """1s to 5min, the same eleven in both languages: the labels are units,
+        not words, so they need no translation."""
+        state = kotlin("AppState.kt")
+        page = kotlin("Pages.kt")
+        gaps = re.search(r"val GAPS: List<Pair<String, Int>> = listOf\((.*?)\n\)",
+                         state, re.S).group(1)
+        seconds = [int(n) for n in re.findall(r'"\w+" to (\d+)', gaps)]
+        self.assertEqual(seconds, [1, 2, 3, 5, 10, 15, 20, 30, 60, 120, 300])
+        self.assertEqual(re.findall(r'"(\w+)" to \d+', gaps),
+                         ["1s", "2s", "3s", "5s", "10s", "15s", "20s", "30s",
+                          "1min", "2min", "5min"])
+        # two seconds unless asked otherwise; at 1次 the row still draws it, as
+        # the 0 that a single notification's gap is, and nothing can change it
+        self.assertHas(state, "const val DEFAULT_GAP = 2")
+        self.assertHas(state, "fun answerOf(n: Notification): Answer = answers[n.key] ?: Answer.FRESH")
+        self.assertHas(page, 'items = if (count == 1) null else GAPS,')
+        self.assertHas(page, 'label = if (count == 1) "0" else gapLabel(gap),')
+        self.assertHas(page, "private fun <T> AnswerChip(")
+        self.assertHas(page, "{ onAnswer(answer.copy(gap = it)) }")
+        # stored, like every other answer
+        self.assertHas(kotlin("Prefs.kt"),
+                       'store.getInt("notify_${n.key}_gap", DEFAULT_GAP)')
+
+    def test_off_empties_the_chart_and_draws_nothing(self):
+        """采集 off is not a frozen picture: the buffer is emptied, the chart
+        is not composed at all (so nothing lays out or repaints), and the page
+        says why instead of showing a still image."""
+        self.assertHas(kotlin("Battery.kt"), "fun clear() {")
+        self.assertHas(kotlin("AppState.kt"), "if (!on) history.clear()")
+        chart = re.search(r"fun ChartRows\(.*?\n    }\n}", kotlin("Panel.kt"), re.S).group(0)
+        self.assertHas(chart, "if (live && recording) {")
+        self.assertHas(chart, "} else {")
+        # the canvas only exists in the live-and-recording branch
+        on = chart[chart.index("if (live && recording) {"):chart.index("} else {")]
+        self.assertHas(on, "LiveChart(")
+        off = chart[chart.index("} else {"):]
+        self.assertLacks(off, "LiveChart(")
+        self.assertHas(chart, 'if (live) tr("图形化已关闭") else tr("实时采集已关闭")')
+
+    def test_live_is_the_page_s_master(self):
+        """实时采集 sits at the head of the one live card: off blanks the rows
+        (a frozen number would be a lie), puts 图形化 out of reach and turns it
+        off.  The process-wide sampler keeps running on Android -- the rules
+        read it -- so this gates the page, not the monitor."""
+        panel = kotlin("Panel.kt")
+        live = re.search(r"fun LiveSection\(.*?\n\}", panel, re.S).group(0)
+        self.assertHas(live, "LiveSwitchesRow(")
+        self.assertHas(live, "blank = !state.live,")
+        self.assertHas(live, "live = state.live,")
+        # ... and the row itself: 实时采集 left, 图形化 right, a little taller
+        # than the value rows so the two switches have room
+        switches = re.search(r"fun LiveSwitchesRow\(.*?\n\}", panel, re.S).group(0)
+        self.assertHas(switches, 'tr("实时采集")')
+        self.assertHas(switches, 'tr("图形化")')
+        self.assertHas(switches, "heightIn(min = 36.dp)")
+        self.assertHas(switches, "Spacer(Modifier.weight(1f))")
+        self.assertHas(switches, "enabled = live,")
+        rows = re.search(r"fun StatusRows\(.*?\n    }\n}", panel, re.S).group(0)
+        self.assertHas(rows, "blank: Boolean")
+        self.assertHas(rows, 'if (blank) "—"')
+        state = kotlin("AppState.kt")
+        self.assertHas(state, "fun setLive(on: Boolean) {")
+        self.assertHas(state, "if (!on) setRecording(false)")
+        self.assertHas(kotlin("Prefs.kt"), 'store.getBoolean("live", true)')
+
+    def test_the_chart_records_only_while_asked(self):
+        """图形化 sits over the chart: off until asked, and the sampler only
+        fills its buffer while it is on.  The snapshot the status table and the
+        rules read is published either way -- the switch gates the record, not
+        the monitor."""
+        panel = kotlin("Panel.kt")
+        chart = re.search(r"fun ChartRows\(.*?\n    }\n}", panel, re.S).group(0)
+        # the switch moved up beside 实时采集; the chart only carries the plot
+        self.assertLacks(chart, 'tr("图形化")')
+        # no heading over the box: the switches and the buttons name it
+        self.assertLacks(chart, 'tr("指标")')
+        self.assertHas(chart, "recording: Boolean,")
+        # ... and the switch itself is handed down on the shared row
+        live = re.search(r"fun LiveSection\(.*?\n\}", kotlin("Panel.kt"), re.S).group(0)
+        self.assertHas(live, "onRecord = state::setRecording,")
+        # the caller hands the state's answer down
+        self.assertHas(kotlin("Panel.kt"), "recording = state.recording,")
+        self.assertHas(kotlin("Panel.kt"), "onRecord = state::setRecording,")
+        # ... and the sampler checks it before it keeps anything
+        battery = kotlin("Battery.kt")
+        self.assertHas(battery, "var recording: Boolean = false")
+        self.assertHas(battery, "if (due && recording) {")
+        # the switch is stored, and read once before the sampler starts
+        self.assertHas(kotlin("Prefs.kt"), 'store.getBoolean("record", false)')
+        self.assertHas(kotlin("AppState.kt"), "fun setRecording(on: Boolean) {")
+        self.assertHas(kotlin("AppState.kt"), "Monitor.recording = on")
+        self.assertHas(kotlin("MainActivity.kt"), "Monitor.recording = prefs.record")
+
+    def test_the_rules_run_with_the_process_not_with_a_page(self):
+        """A notification has to arrive with the screen off, so nothing about
+        the rules hangs off a composable."""
+        main = kotlin("MainActivity.kt")
+        self.assertHas(main, "startNotifier(this)")
+        self.assertHas(main, "Voice.start(this)")
+        self.assertHas(main, "Voice.shutdown()")
+        self.assertLacks(kotlin("Pages.kt"), "startNotifier(")
+        self.assertHas(self.notifier(), "Monitor.state.collect")
+        # the one flow, read twice: the chart's history and these rules
+        self.assertHas(self.notifier(), "scope.launch {")
+
+    def test_the_banner_is_the_channel_the_settings_point_at(self):
+        post = re.search(r"fun post\(.*?\n\}", self.notifier(), re.S).group(0)
+        self.assertHas(post, "NotificationCompat.Builder(context, NOTIFY_CHANNEL)")
+        self.assertHas(post, "R.drawable.ic_notify")
+        self.assertHas(post, '.setContentTitle(tr("充电提醒"))')
+        self.assertHas(post, ".setContentText(rule.says())")
+        self.assertHas(post, ".setPriority(NotificationCompat.PRIORITY_HIGH)")
+        self.assertHas(post, "PendingIntent.getActivity(")
+        # one slot per notification: a second 充电完成 replaces the first
+        self.assertHas(post, "manager.notify(rule.n.key, 1, banner)")
+        # no permission, no banner -- and nothing to crash
+        self.assertHas(post, "Manifest.permission.POST_NOTIFICATIONS")
+        # the status bar tints a small icon, so it is one flat shape
+        icon = read(MAIN, "res/drawable/ic_notify.xml")
+        self.assertHas(icon, 'android:fillColor="#FFFFFFFF"')
+        self.assertHas(icon, "android:viewportWidth=\"24\"")
+
+    def test_the_voice_follows_the_apps_language(self):
+        src = kotlin("Voice.kt")
+        self.assertHas(src, "if (Strings.effective == Lang.ZH) {")
+        self.assertHas(src, "Locale.SIMPLIFIED_CHINESE")
+        self.assertHas(src, "Locale.ENGLISH")
+        # the sentence is handed to the engine after the language is set
+        self.assertLess(src.index("engine.language = if"), src.index("engine.speak("))
+        # asked for before the engine was up is said once it is
+        self.assertHas(src, "waiting?.let { say(it) }")
+        self.assertHas(src, "TextToSpeech(app) { status ->")
+
+    def test_picking_a_voice_previews_it(self):
+        """The choice is its own 试听: no extra row for it, and none to read --
+        and only with 通知开关 on, since a page that is switched off is silent."""
+        pages = kotlin("Pages.kt")
+        self.assertHas(pages, "if (state.notify && picked.kind == NotifyKind.VOICE &&")
+        self.assertHas(pages, "Voice.say(n.says(state.at(n)))")
+
+
+class AboutTest(SourceTest):
+    """设置's 关于: four lines, and a copy of them."""
+
+    def pages(self):
+        return kotlin("Pages.kt")
+
+    def test_settings_carries_the_four_lines(self):
+        settings = re.search(r"fun SettingsPage\(.*?\n\}",
+                             self.pages(), re.S).group(0)
+        self.assertHas(settings, 'tr("关于")')
+        self.assertHas(settings, "aboutText()")
+        # the word itself is bigger than the block under it
+        self.assertHas(settings, "fontSize = 16.sp")
+        # ... and they are plain selectable text, not a card with a copy button
+        self.assertHas(settings, "SelectionContainer")
+        self.assertLacks(settings, 'Section(tr("关于"))')
+        self.assertLacks(settings, "复制关于信息")
+        self.assertLacks(self.pages(), "ClipboardManager")
+        self.assertLacks(self.pages(), "Toast")
+
+    def test_the_text_is_the_four_lines_and_links_the_releases(self):
+        about = re.search(r"private fun aboutText\(\).*?\n\}",
+                          self.pages(), re.S).group(0)
+        for word in ("版本", "作者", "更新", "隐私"):
+            with self.subTest(word=word):
+                self.assertHas(about, f'tr("{word}")')
+        for part in ("buildLabel", "fanzu8", "RELEASES_URL", "不联网"):
+            with self.subTest(part=part):
+                self.assertHas(about, part)
+        self.assertHas(about, "withLink(LinkAnnotation.Url(RELEASES_URL))")
+        # every key takes its colon, in the sentence's punctuation
+        for word in ("版本", "作者", "更新", "隐私"):
+            with self.subTest(word=word):
+                self.assertHas(about, f"aboutKey(tr(\"{word}\"))")
+        self.assertHas(self.pages(), "Strings.effective == Lang.ZH")
+
+    def test_the_label_is_the_version_a_commit_and_a_day(self):
+        self.assertHas(self.pages(), "BuildConfig.VERSION_NAME")
+        self.assertHas(self.pages(), "BuildConfig.GIT_COMMIT")
+        self.assertHas(self.pages(), "BuildConfig.BUILD_DATE")
+        gradle = read(ANDROID, "app", "build.gradle.kts")
+        self.assertHas(gradle, 'buildConfigField("String", "GIT_COMMIT"')
+        self.assertHas(gradle, 'buildConfigField("String", "BUILD_DATE"')
+        self.assertHas(gradle, "buildConfig = true")
+        self.assertHas(gradle, "rev-parse")
+
+    def test_the_releases_row_opens_the_project_page(self):
+        settings = read(KOTLIN, "SystemSettings.kt")
+        self.assertHas(settings,
+                       'const val RELEASES_URL = '
+                       '"https://github.com/fanzu8/chargecap/releases"')
+        self.assertHas(settings, "Intent.ACTION_VIEW")
+        self.assertHas(settings, "fun openReleases(context: Context): Boolean")
 
 
 class ProjectTest(SourceTest):
@@ -671,11 +1726,25 @@ class ProjectTest(SourceTest):
                        "manifest")
         self.assertHas(self.manifest, 'android:exported="true"', "manifest")
 
-    def test_only_the_wake_lock_permission_is_asked_for(self):
+    def test_only_the_two_permissions_it_needs_are_asked_for(self):
+        """WAKE_LOCK for 禁止休眠, and 通知横幅 -- install-time up to Android 12,
+        a runtime question from 13."""
         self.assertEqual(
             re.findall(r'<uses-permission android:name="([^"]+)"',
                        self.manifest),
-            ["android.permission.WAKE_LOCK"])
+            ["android.permission.WAKE_LOCK",
+             "android.permission.POST_NOTIFICATIONS"])
+
+    def test_the_vendor_packages_are_named_for_android_11(self):
+        """From API 30 another package is invisible unless it is named, and an
+        explicit Intent to an invisible package throws."""
+        self.assertHas(self.manifest, "<queries>", "manifest")
+        for package in ("com.huawei.systemmanager", "com.miui.securitycenter",
+                        "com.coloros.safecenter", "com.vivo.permissionmanager",
+                        "com.samsung.android.lool", "com.meizu.safe"):
+            with self.subTest(package=package):
+                self.assertHas(self.manifest, f'<package android:name="{package}" />',
+                               "manifest")
 
     def test_it_installs_on_the_phone_it_was_written_for(self):
         """Android 9 (API 28) is the phone this was tested on; API 24 is as far
@@ -809,8 +1878,8 @@ class CiTest(SourceTest):
         self.assertHas(self.workflow, "SHA256SUMS")
         self.assertHas(self.workflow, 'chargecap-${VERSION}-build-info.txt')
         readme = read(ANDROID, "README.md")
-        self.assertHas(readme, "chargecap-0.0.1-universal.apk")
-        self.assertHas(readme, "chargecap-0.0.1-universal-debug.apk")
+        self.assertHas(readme, "chargecap-0.0.2-universal.apk")
+        self.assertHas(readme, "chargecap-0.0.2-universal-debug.apk")
         self.assertHas(readme, "chargecap-<version>-<abi>-<variant>.apk")
 
     def test_the_build_info_says_who_signed_it(self):
@@ -873,7 +1942,7 @@ class CiTest(SourceTest):
         `appVersion`, and the versionCode is derived from it -- one number to
         bump, and nothing to forget."""
         gradle = read(ANDROID, "app", "build.gradle.kts")
-        self.assertHas(gradle, 'val appVersion = "0.0.1"')
+        self.assertHas(gradle, 'val appVersion = "0.0.2"')
         self.assertHas(gradle, "versionCode = versionCodeOf(appVersion)")
         self.assertHas(gradle, "versionName = appVersion")
         self.assertHas(self.workflow, "appVersion")

@@ -70,6 +70,13 @@ class SampleBuffer(val capacity: Int) {
     var size = 0                // how many are held (grows to `capacity`)
         private set
 
+    /** 采集 off: the curve goes with it -- a frozen picture is still a record
+     *  nobody asked to keep. */
+    fun clear() {
+        next = 0
+        size = 0
+    }
+
     fun add(t: Long, values: Map<String, Double?>) {
         time[next] = t
         for ((key, array) in data) {
@@ -280,6 +287,17 @@ object Monitor {
     @Volatile
     var intervalMs: Long = SAMPLE_MS
 
+    /**
+     * 采集: the chart records only while this is true.
+     *
+     * Only the chart: the same pass still publishes the snapshot the status
+     * table and the rules read, so turning 采集 off pauses the curve and
+     * nothing else.  [storedAt] is not advanced while it is off, so the first
+     * sample after switching on is due at once.
+     */
+    @Volatile
+    var recording: Boolean = false
+
     val buffer = SampleBuffer(MAX_SAMPLES)
 
     private val _state = MutableStateFlow(Snapshot())
@@ -288,8 +306,9 @@ object Monitor {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var job: Job? = null
 
-    fun start(context: Context) {
+    fun start(context: Context, everyMs: Long = SAMPLE_MS) {
         if (job?.isActive == true) return
+        intervalMs = everyMs
         val reader = BatteryReader(context)
         job = scope.launch {
             // signed current extremes, reset every time the app starts
@@ -300,6 +319,9 @@ object Monitor {
             var publishedAt = 0L
             while (isActive) {
                 val now = SystemClock.elapsedRealtime()
+                // the sleep record rides on the same pass: the wall clock
+                // against uptime, which stands still while the system dozes
+                Sleeps.tick(System.currentTimeMillis(), SystemClock.uptimeMillis())
                 val raw = reader.read()
                 val ma = raw.currentA?.let { it * 1000.0 }
                 if (ma != null) {
@@ -314,7 +336,7 @@ object Monitor {
                 // the chart's clock: one sample per interval, however often the
                 // panel reads
                 val due = intervalMs <= SAMPLE_MS || now - storedAt >= intervalMs
-                if (due) {
+                if (due && recording) {
                     storedAt = now
                     buffer.add(
                         now,

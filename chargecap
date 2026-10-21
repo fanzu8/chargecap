@@ -34,6 +34,13 @@ import tempfile
 import time
 from array import array
 
+# the notification table is shared with the notifier (see notifier.py): it sits
+# beside this script in the repository and in /usr/local/lib/chargecap installed
+for _path in (os.path.dirname(os.path.abspath(__file__)),
+              "/usr/local/lib/chargecap"):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
+
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
@@ -41,8 +48,16 @@ gi.require_version("PangoCairo", "1.0")
 from gi.repository import (Adw, Gdk, Gio, GLib, Gtk, Pango,  # noqa: E402
                            PangoCairo)
 
+from notifications import (NOTIFICATIONS, NOTIFY_BY_KEY, GROUPS, GAPS,
+                           DEFAULT_GAP, gap_label, set_translator,  # noqa: E402
+                           keep_apart, spoken_kinds, load_sleeps, answers)
+from version import build_label  # noqa: E402
+
 # where the per-user UI preferences live (metrics / chart window / language)
 UI_FILE = os.path.expanduser("~/.config/chargecap/ui.json")
+
+# 关于's 更新 row: the releases page, in the browser
+RELEASES_URL = "https://github.com/fanzu8/chargecap/releases"
 
 # ---- language ----------------------------------------------------------------
 # The UI follows the system language.  Strings are written in Chinese in the
@@ -57,7 +72,10 @@ EN = {
     "下限": "Lower limit",
     "禁止休眠": "Inhibit sleep",
     "系统不休眠，保持网络在线": "No sleep, the network stays up",
-    "指标": "Metrics",
+    "实时采集": "Live data",
+    "图形化": "Chart",
+    "图形化已关闭": "The chart is off",
+    "实时采集已关闭": "Live data is off",
     "窗口": "Window",
     "采样间隔": "Interval",
     # status table (English is much wider than Chinese, so the values stay
@@ -95,11 +113,71 @@ EN = {
     "电电": "chargecap",
     # the language switch in the header
     "语言": "Language",
+    # 设置: pmOS's own page.  No 自启动 or 通知权限 here -- there is no system
+    # screen for either -- so it is 关于, and 关于 can be copied.
+    "设置": "Settings",
+    "关于": "About",
+    "版本": "Version",
+    "作者": "Author",
+    "更新": "Updates",
+    "隐私": "Privacy",
+    "不联网、不收集任何数据": "No network, no data collected",
     # the background switch, left of it
     "背景": "Background",
     "暗色": "Dark",
     "亮色": "Light",
     "跟随系统": "Follow system",
+    # 通知: the page beside 高级 -- the master switch, and then each
+    # notification's own switch, line and way of arriving
+    "通知": "Notifications",
+    "高级": "Advanced",
+    "通知开关": "Notifications",
+    "通知方式": "Notify by",
+    "次数": "Times",
+    "间隔": "Interval",
+    "横幅": "Banner",
+    "语音": "Voice",
+    "1次": "1×",
+    "2次": "2×",
+    "3次": "3×",
+    "5次": "5×",
+    "10次": "10×",
+    "直到开始充电": "until charging",
+    "直到电源断开": "until power off",
+    "充电完成": "Charging complete",
+    "电量过低": "Battery low",
+    "电源连接": "Power connected",
+    "电源断开": "Power disconnected",
+    # ... and the short words the rows wear under their group's heading
+    "连接": "Connected",
+    "断开": "Disconnected",
+    "过高": "High",
+    "过低": "Low",
+    "充电过高": "Charge high",
+    "放电过高": "Discharge high",
+    "温度过高": "Too hot",
+    "温度过低": "Too cold",
+    "电压过高": "Voltage high",
+    "电压过低": "Voltage low",
+    "充电电流过高": "High charge current",
+    "放电电流过高": "High discharge current",
+    "功率过高": "High power",
+    # the groups the page reads in
+    "基础功能": "Base",
+    "充电": "Charging",
+    # the sleep record under 禁止休眠: a number the app keeps, not a reminder
+    "次": "×",
+    "休眠记录": "Sleep log",
+    "知道了": "Got it",
+    "还没开启禁止休眠": "sleep has never been inhibited",
+    "还没有休眠": "no sleep yet",
+    "自 %s 起": "since %s",
+    "最近 %s，%s": "latest %s, %s",
+    "睡了 %d 分钟": "slept %d min",
+    "睡了 %d 小时 %d 分钟": "slept %d h %d min",
+    "达": "at",
+    "低于": "below",
+    "高于": "above",
 }
 
 
@@ -188,6 +266,10 @@ def apply_scheme(want):
 def _(text):
     """The string in the user's language (Chinese is the source language)."""
     return text if LANGUAGE == "zh" else EN.get(text, text)
+
+
+# the notification table is written in Chinese and translated where it is read
+set_translator(_)
 
 
 # 指标 buttons and the curves' Y axes: the full English names are wide enough
@@ -293,6 +375,17 @@ preferencesgroup:first-child { margin-top: -14px; }
 row.compact-status button { min-height: 0px; padding-top: 0px; padding-bottom: 0px;
                             padding-left: 8px; padding-right: 8px; }
 row.compact-status dropdown { min-height: 0px; }
+/* a switch is taller than a line of text: pull it back into the same row
+   height as the values beside it (图形化 sits in the table's card) */
+row.compact-status switch { min-height: 0px; margin-top: -3px;
+                            margin-bottom: -3px; }
+/* 实时采集 / 图形化 share one line: their names are the row's own, bold like
+   the other titles */
+label.switch-caption { font-weight: 700; }
+/* the row is as tall as 上限 / 下限 (a spin's row, not a switch's), and its
+   switches keep the margin the other switch rows shave off */
+row.live-row.compact-status, row.live-row.compact-status > box { min-height: 40px; }
+row.live-row.compact-status switch { margin-top: 0px; margin-bottom: 0px; }
 /* the "USB 类型" help button: just the circled i, no button chrome */
 spinbutton.limit-spin { min-height: 0px; }
 spinbutton.limit-spin text { min-height: 0px; }
@@ -355,11 +448,35 @@ row.power-row.compact-status label.sample-caption {
 }
 /* ... while its value stays plain */
 label.sample-value { font-weight: 400; }
+/* 通知's answers row: one size for all six -- the name and the value -- so a
+   chip is not a footnote beside its key.  The key carries the weight, the
+   value does not: what it is, then what it holds.  The size is scale_css()'s
+   (it follows the language), not a number here. */
+label.answer-caption { font-weight: 700; opacity: 0.85; }
+label.answer-value { font-weight: 400; opacity: 1; }
+/* the number beside the notification's name: a compact spin, no chrome */
+/* the threshold's stepper, at the size 限制's is: the zero-padded one was
+   too tight to hit, and the number is the point of the row */
+spinbutton.notify-spin { min-height: 0px; }
+spinbutton.notify-spin button { padding: 3px 7px; min-width: 24px; min-height: 26px; }
+
 
 .charge-off { color: #e5a50a; }
 /* the language switch sits in the header bar and stays as small as it can */
 button.lang-btn { min-width: 0px; min-height: 0px; padding: 1px 7px; }
+/* 设置's gear: the two buttons beside it are words, so this one carries the
+   whole target -- 24px of glyph in a 36px square, rather than a small icon
+   floating in a wide bar */
+button.gear-btn { font-size: 24px; min-width: 36px; min-height: 36px;
+                  padding: 0px; }
+/* 关于's heading: a size up from the four lines under it, which are the
+   panel's normal text */
+label.about-heading { font-size: 18px; }
 button.lang-btn label { font-size: 10px; }
+/* the two page tabs in the header: words only, small, the way the Android app
+   has them -- Adw's own switcher clips "Notifications" beside the switches */
+button.tab-btn { min-width: 0px; min-height: 0px; padding: 3px 12px; }
+button.tab-btn label { font-size: 12px; font-weight: 600; }
 """
 
 
@@ -516,6 +633,39 @@ def choice_popover(items, current, on_pick, max_height=420):
     return pop
 
 
+def chip_text(items, value):
+    """The chosen label with the chip's caret; the first one when nothing
+    matches."""
+    for label, val in items:
+        if val == value:
+            return label + "  \u25be"
+    return (items[0][0] if items else "") + "  \u25be"
+
+
+def chip_button(title, items, current, on_pick):
+    """A choice made on a chip: the current label, and a list that ticks it.
+
+    The chart window and the recording interval already read this way, so a
+    choice on the 通知 page looks like one made anywhere else -- and the list
+    closes itself when the choice is made.
+    """
+    btn = Gtk.MenuButton()
+    btn.add_css_class("flat")
+    btn.add_css_class("lang-btn")
+    label = Gtk.Label(label=chip_text(items, current))
+    btn.set_child(label)
+    btn.set_tooltip_text(title)
+    holder = {}
+
+    def picked(_btn, value):
+        holder["pop"].popdown()
+        on_pick(value)
+
+    holder["pop"] = choice_popover(items, current, picked)
+    btn.set_popover(holder["pop"])
+    return btn, label
+
+
 # ---- chart: the selectable metrics.  Each one has its own colour (the same
 # colour is reused by the matching item in the status panel and by its toggle
 # button) and a fixed Y axis side, so selecting/unselecting never makes an axis
@@ -586,6 +736,13 @@ SCALE = {
 def scale_css():
     """Font sizes of the status table for the current language."""
     s = SCALE.get(LANGUAGE, SCALE["en"])
+    # 通知 is read one row at a time, not as a five-column table: its names,
+    # numbers and answers are a step up from the table's, while the group
+    # headings (基础功能, 电源) keep the size that names every group on every
+    # page.  The page's own switch sits at the top of that scale.
+    name = s["heading"]        # the row's word, and the number beside it
+    answer = s["heading"] - 1  # 通知方式 / 横幅 / 1次 / °C
+    master = name + 3          # 通知开关: the page's own title
     return ("row.key-chip label.title { font-size: %dpx; }\n"
             "row.key-chip label { font-size: %dpx; }\n"
             ".key-label { font-size: %dpx; }\n"
@@ -602,11 +759,17 @@ def scale_css():
             "row.switch-row.compact-status label.title"
             " { font-size: %dpx; font-weight: 700; }\n"
             "row.power-row.compact-status label { font-size: %dpx; }\n"
+            "label.notify-name { font-size: %dpx; font-weight: 700; }\n"
+            "row.notify-master label.title { font-size: %dpx; }\n"
+            "spinbutton.notify-spin text { font-size: %dpx; }\n"
+            "label.answer-caption { font-size: %dpx; }\n"
+            "label.answer-value { font-size: %dpx; }\n"
             "row.power-row.compact-status label.sample-caption"
             " { font-size: %dpx; font-weight: 700; }\n"
             % (s["title"], s["value"], s["key"], s["small"], s["sub"],
                s["spin"], s["btn"], s["btnpad"], s["btnpad"], s["value"],
-               s["heading"], s["big"], s["key"]))
+               s["heading"], s["big"], name,
+               master, name, answer, answer, s["key"]))
 
 
 WINDOWS = (("15s", 15), ("30s", 30), ("1min", 60), ("2min", 120), ("5min", 300),
@@ -679,8 +842,7 @@ class LiveChart(Gtk.DrawingArea):
     colour.  Samples live in memory only and disappear when the app closes.
     """
 
-    COL_W = 30          # width of one Y-axis column (name / unit / ticks)
-    PAD_X = 4           # gap between the plot and the nearest tick column
+    PAD_X = 2           # gap between the plot and the nearest tick column
     PAD_T, PAD_B = 26, 13   # top leaves room for the two-line axis header
     PTS_PER_PX = 2      # decimation cap: at most 2 drawn points per pixel
     LINE_W = 0.6        # curve thickness
@@ -702,10 +864,21 @@ class LiveChart(Gtk.DrawingArea):
         self._ts = array("d")       # shared timestamps (monotonic)
         self._data = {k: array("d") for k in METRIC_KEYS}
         self._font = Pango.FontDescription("Sans")
+        # 图形化: off means nothing is drawn at all, not a frozen curve
+        self.recording = True
+        # ... and what to say instead: 图形化 off, or 实时采集 off above it
+        self.message = None
         # a small font keeps the tick columns narrow so the plot stays wide
         self._font.set_absolute_size(8 * Pango.SCALE)
 
     # ---- data ----
+    def clear(self):
+        """Throw the curve away: 采集 off means nothing is kept, and a frozen
+        picture is still a record nobody asked for."""
+        del self._ts[:]
+        for vs in self._data.values():
+            del vs[:]
+
     def add_sample(self, values):
         """values: {key: float|None}; called from the UI refresh timer."""
         self._ts.append(time.monotonic())
@@ -752,6 +925,37 @@ class LiveChart(Gtk.DrawingArea):
         PangoCairo.show_layout(cr, layout)
         return w, h
 
+    def _range(self, key, curve):
+        """The Y range one curve is drawn over: its own min/max, opened out by a
+        tenth, or the metric's fixed range (the charge percentage)."""
+        fixed = METRIC_INFO[key][6]
+        if fixed:
+            return fixed
+        if not curve:
+            return 0.0, 1.0
+        vals = [v for _, v in curve]
+        lo, hi = min(vals), max(vals)
+        pad = (hi - lo) * 0.1
+        lo, hi = lo - pad, hi + pad
+        if hi - lo < 1e-9:
+            lo, hi = lo - 0.5, hi + 0.5
+        return lo, hi
+
+    def _column_width(self, cr, key, rng):
+        """How wide this curve's axis column has to be: the widest of its name,
+        its unit and the five ticks it will print -- nothing more."""
+        _k, name, unit, _c, fmt, _s, _f = METRIC_INFO[key]
+        lo, hi = rng
+        texts = [metric_axis_label(key, name), unit]
+        texts += [fmt.format(lo + f * (hi - lo)) for f in self.TICKS]
+        return max(self._text_width(cr, t) for t in texts) + 1
+
+    def _text_width(self, cr, text):
+        layout = PangoCairo.create_layout(cr)
+        layout.set_font_description(self._font)
+        layout.set_text(text, -1)
+        return layout.get_pixel_size()[0]
+
     def _line_height(self, cr):
         """Height of one line of the axis font (measured once, off-screen)."""
         if not LiveChart._LH:
@@ -766,6 +970,11 @@ class LiveChart(Gtk.DrawingArea):
         return layout.get_pixel_size()[0]
 
     def _draw(self, _area, cr, width, height):
+        if not self.recording:
+            self._text(cr, width / 2, height / 2,
+                       self.message or _("图形化已关闭"),
+                       (0.55, 0.55, 0.55), "center")
+            return
         sel = [k for k in METRIC_KEYS if k in self.selected]
         if not sel:
             self._text(cr, width / 2, height / 2, _("选择上方指标以显示曲线"),
@@ -774,14 +983,29 @@ class LiveChart(Gtk.DrawingArea):
 
         left = [k for k in sel if METRIC_INFO[k][5] == "left"]
         right = [k for k in sel if METRIC_INFO[k][5] == "right"]
-        ml = self.PAD_X + self.COL_W * len(left)
-        mr = self.PAD_X + self.COL_W * len(right)
-        pw = max(10, width - ml - mr)
         ph = max(10, height - self.PAD_T - self.PAD_B)
         top, bottom = self.PAD_T, self.PAD_T + ph
         now = time.monotonic()
         cutoff = now - self.window_secs
         span = max(1e-6, now - cutoff)
+
+        # One pass for the points and each curve's own range, because the
+        # columns below are sized from the ticks they will show -- and a tick
+        # is only known once the range is.
+        pts = {}
+        rng = {}
+        for key in sel:
+            pts[key] = self._series(key, cutoff)
+            rng[key] = self._range(key, pts[key])
+
+        # Each column is exactly as wide as what it draws: 电量's "100" needs
+        # half of what 功率's "+9.28" does, and the difference is plot the old
+        # fixed width was leaving empty.  The plot therefore reaches closer to
+        # both ends, and the labels stay where they belong.
+        wide = {key: self._column_width(cr, key, rng[key]) for key in sel}
+        ml = (sum(wide[k] for k in left) + self.PAD_X) if left else 0
+        mr = (sum(wide[k] for k in right) + self.PAD_X) if right else 0
+        pw = max(10, width - ml - mr)
 
         # plot frame
         cr.set_source_rgba(0.5, 0.5, 0.5, 0.35)
@@ -806,24 +1030,16 @@ class LiveChart(Gtk.DrawingArea):
             _k, name, unit, color, fmt, side, fixed = METRIC_INFO[key]
             name = metric_axis_label(key, name)
             rgb = _rgb(color)
-            pts = self._series(key, cutoff)
-            if not pts:
+            curve = pts[key]
+            if not curve:
                 continue
-            if fixed:
-                lo, hi = fixed
-            else:
-                vals = [v for _, v in pts]
-                lo, hi = min(vals), max(vals)
-                pad = (hi - lo) * 0.1
-                lo, hi = lo - pad, hi + pad
-                if hi - lo < 1e-9:
-                    lo, hi = lo - 0.5, hi + 0.5
+            lo, hi = rng[key]
             scale = ph / (hi - lo)
 
             # the curve
             cr.set_source_rgb(*rgb)
             cr.set_line_width(self.LINE_W)
-            for n, (t, v) in enumerate(pts):
+            for n, (t, v) in enumerate(curve):
                 x = ml + pw * (t - cutoff) / span
                 y = bottom - (v - lo) * scale
                 if n == 0:
@@ -838,9 +1054,12 @@ class LiveChart(Gtk.DrawingArea):
             # never appear between them.
             col = (left if side == "left" else right).index(key)
             if side == "left":
-                ax, align = ml - self.PAD_X - self.COL_W * col, "right"
+                # from the plot outwards: the right edge of this one's column
+                ax = ml - self.PAD_X - sum(wide[k] for k in left[:col])
+                align = "right"
             else:
-                ax, align = width - mr + self.PAD_X + self.COL_W * col, "left"
+                ax = width - mr + self.PAD_X + sum(wide[k] for k in right[:col])
+                align = "left"
             lh = self._line_height(cr)
             self._text(cr, ax, 0, name, rgb, align)
             self._text(cr, ax, lh, unit, rgb, align)
@@ -907,6 +1126,17 @@ class Window(Adw.ApplicationWindow):
         self._last_w = -1
         self._dbg_key = None      # CL_DEBUG=1 prints on change only
         self._chart_ready = False   # guard while restoring the saved chart prefs
+        # 通知: what the page's own rows hold.  The rules live in the notifier
+        # (notifier.py), which keeps watching with this window closed
+        self.notify = self._notify_state()
+        # 实时采集: the table and the chart read the phone only while this is
+        # on.  On by default -- a panel that shows nothing on a fresh install
+        # looks broken -- but one switch stops all of it.
+        self.live = bool(load_ui().get("live", True))
+        # 图形化: the chart records nothing until this is switched on.  Off
+        # until asked: a fresh window is a look at the phone, not a consent to
+        # keep every reading it saw.
+        self.record = bool(load_ui().get("record", False))
 
         provider = Gtk.CssProvider()
         provider.load_from_string(CSS + metric_css() + scale_css())
@@ -917,13 +1147,44 @@ class Window(Adw.ApplicationWindow):
 
         tv = Adw.ToolbarView()
         header = Adw.HeaderBar()
+        # pack_end puts each button left of the last one, so calling them in
+        # this order reads 背景 · 语言 · ⚙ -- the Android header's order, with
+        # 设置 the gear at the far right rather than a third tab
+        header.pack_end(self._settings_button())
         header.pack_end(self._language_button())
-        # pack_end puts each button left of the last one, so the background
-        # switch ends up before the language one, as in the Android app
         header.pack_end(self._background_button())
         tv.add_top_bar(header)
         page = Adw.PreferencesPage()
-        tv.set_content(page)
+        # 通知 and 高级, the pair the Android app opens with; 设置 is the gear
+        # at the end of the header.  The panel stays what opens: it is what
+        # this app has always been
+        stack = Adw.ViewStack()
+        # the tabs are two words, the way the Android app has them: Adw's own
+        # switcher keeps an icon slot and clips "Notifications" beside the two
+        # header switches, and a page name is a word, not a picture
+        self.stack = stack
+        self.tabs = {}
+        tabs = Gtk.Box()
+        tabs.add_css_class("linked")
+        first = None
+        for name, label in (("notify", _("通知")), ("panel", _("高级"))):
+            btn = Gtk.ToggleButton(label=label)
+            btn.add_css_class("tab-btn")
+            btn.connect("toggled", self._on_tab, name)
+            if first is not None:
+                btn.set_group(first)
+            else:
+                first = btn
+            tabs.append(btn)
+            self.tabs[name] = btn
+        stack.add_named(self._notify_page(), "notify")
+        stack.add_named(page, "panel")
+        stack.add_named(self._settings_page(), "settings")
+        stack.set_visible_child_name("panel")
+        self.tabs["panel"].set_active(True)
+        stack.connect("notify::visible-child-name", self._sync_tabs)
+        header.set_title_widget(tabs)
+        tv.set_content(stack)
         self.set_content(tv)
 
         # ---- limits ----
@@ -970,6 +1231,21 @@ class Window(Adw.ApplicationWindow):
         self.row_inhibit.add_css_class("switch-row")
         hug_title(self.row_inhibit)
         g_pow.add(self.row_inhibit)
+        # the record under the promise: whether the system slept anyway is the
+        # one way this switch can be caught, so the count sits beside it.  It
+        # is a record and not a notification -- a sleeping system delivers
+        # nothing -- so the row has no switch of its own, and tapping it opens
+        # the history the notifier kept
+        self.row_sleep = Adw.ActionRow(title=_("休眠记录"))
+        self.row_sleep.add_css_class("compact-status")
+        self.row_sleep.add_css_class("switch-row")
+        hug_title(self.row_sleep)
+        self.sleep_count = Gtk.Label()
+        self.row_sleep.add_suffix(self.sleep_count)
+        self.row_sleep.set_activatable(True)
+        self.row_sleep.connect("activated", self._on_sleep_log)
+        self._sleep_at = None
+        g_pow.add(self.row_sleep)
         page.add(g_pow)
         self.row_inhibit.connect("notify::active", self._on_changed)
 
@@ -977,6 +1253,42 @@ class Window(Adw.ApplicationWindow):
         # no group title: the rows speak for themselves and every pixel of
         # height counts on a phone screen
         self.group_status = Adw.PreferencesGroup()
+        # 实时采集: the card's master.  Everything below it -- the rows, the
+        # chart, its switch -- is only alive while this is on.
+        # 实时采集 and 图形化 share one line, at the card's two ends: the
+        # table's gate on the left, the chart's on the right.  Both are switches
+        # of the same kind, so they read as a pair.
+        self.row_live = Adw.ActionRow()
+        self.row_live.add_css_class("compact-status")
+        self.row_live.add_css_class("live-row")
+        pair = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        pair.set_valign(Gtk.Align.CENTER)
+        self.live_label = Gtk.Label(label=_("实时采集"))
+        self.live_label.add_css_class("switch-caption")
+        self.sw_live = Gtk.Switch()
+        self.sw_live.set_active(self.live)
+        self.sw_live.set_valign(Gtk.Align.CENTER)
+        self.sw_live.connect("notify::active", self._on_live)
+        record_label = Gtk.Label(label=_("图形化"))
+        record_label.add_css_class("switch-caption")
+        self.sw_record = Gtk.Switch()
+        self.sw_record.set_active(self.record)
+        self.sw_record.set_sensitive(self.live)
+        self.sw_record.set_valign(Gtk.Align.CENTER)
+        self.sw_record.connect("notify::active", self._on_record)
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        for widget in (self.live_label, self.sw_live, spacer,
+                       record_label, self.sw_record):
+            pair.append(widget)
+        # set_child, not add_suffix: the pair is on the left, not pushed to
+        # the row's right end.  The margin is the row's own side padding, which
+        # set_child would otherwise skip -- without it 实时采集 starts left of
+        # every other row's title.
+        pair.set_margin_start(12)
+        pair.set_margin_end(12)
+        self.row_live.set_child(pair)
+        self.group_status.add(self.row_live)
         self.f = {}
         self._spread = []        # rows whose values are spread evenly
         self.spin_limit = None   # writable USB input current limit (mA)
@@ -1071,6 +1383,12 @@ class Window(Adw.ApplicationWindow):
         # spreading out -- the gaps did nothing, and the room they free is
         # where the chart's recording interval goes.
         self._power_row()
+
+        # capacity in mAh and the resulting health percentage: it follows 电源,
+        # the row it is the same kind of answer as.  It hugs its title (which is
+        # long, so it does not join the shared columns) and the health value
+        # carries its own key.
+        self._capacity_row()
 
         # USB 类型 with a help button, then 温度 on the same row
         help_btn = Gtk.MenuButton()
@@ -1184,10 +1502,6 @@ class Window(Adw.ApplicationWindow):
 
         current_row()
 
-        # last row: capacity in mAh and the resulting health percentage.  This
-        # one hugs its title (its title is long, so it does not join the shared
-        # columns) and the health value carries its own key.
-        self._capacity_row()
         page.add(self.group_status)
 
         # ---- chart: one overlaid rolling chart, no data kept after closing ----
@@ -1197,8 +1511,10 @@ class Window(Adw.ApplicationWindow):
         self.chart.selected = saved or list(DEFAULT_METRICS)
         self.chart.window_secs = ui.get("window") if ui.get("window") in (
             w[1] for w in WINDOWS) else 60
+        self.chart.recording = self.record
 
-        g_chart = Adw.PreferencesGroup(title=_("指标"))
+        # no group title: the buttons say what the box is for, and the word
+        # above them only repeated them
         # one control row: the metric buttons against the left edge, the window
         # selector against the right
         row_ctl = Adw.ActionRow()
@@ -1229,15 +1545,14 @@ class Window(Adw.ApplicationWindow):
         ctl.append(wlabel)
         ctl.append(self._window_button())
         row_ctl.set_child(ctl)
-        g_chart.add(row_ctl)
+        self.group_status.add(row_ctl)
 
         row_chart = Adw.ActionRow()
         row_chart.set_activatable(False)
         # no extra padding around the plot: it is the last thing on the page
         row_chart.add_css_class("compact-status")
         row_chart.set_child(self.chart)
-        g_chart.add(row_chart)
-        page.add(g_chart)
+        self.group_status.add(row_chart)
         self._chart_ready = True
 
         # react to the shell resizing us (rotation) instead of waiting for the
@@ -1551,6 +1866,402 @@ class Window(Adw.ApplicationWindow):
 
 
     # ---- chart controls ----
+    # ---- the two pages ----------------------------------------------------
+    def _on_tab(self, btn, name):
+        """A tab was pressed: show its page (the stack tells the other tab)."""
+        if btn.get_active():
+            self.stack.set_visible_child_name(name)
+
+    def _sync_tabs(self, *_):
+        """The stack changed under us: keep the tabs telling the truth."""
+        name = self.stack.get_visible_child_name()
+        for key, btn in self.tabs.items():
+            if btn.get_active() != (key == name):
+                btn.set_active(key == name)
+
+    # ---- 设置 / 关于 ------------------------------------------------------
+    def _settings_button(self):
+        """The gear at the far right: 设置, one page in.
+
+        A glyph rather than an icon file, and the same ⚙ the Android header
+        uses -- the two buttons beside it are words, so the third is the one
+        that says "not a page, a place".
+        """
+        btn = Gtk.Button(label="\u2699")
+        btn.add_css_class("flat")
+        btn.add_css_class("gear-btn")
+        btn.set_tooltip_text(_("设置"))
+        btn.connect("clicked", self._on_settings)
+        return btn
+
+    def _on_settings(self, _btn):
+        self.stack.set_visible_child_name("settings")
+
+    def _settings_page(self):
+        """设置: 关于, as plain text.
+
+        There is no 自启动 or 通知权限 row here: the app is a systemd user
+        service, and a banner is the session's, so neither needs the user to go
+        hunting in a system screen.  What is left is 关于, and it is not a card:
+        the four lines are one selectable label, copied the way any text is,
+        with the releases URL a link inside it.
+        """
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_margin_top(24)
+        box.set_margin_start(24)
+        box.set_margin_end(24)
+        box.set_margin_bottom(24)
+
+        head = Gtk.Label()
+        head.set_markup("<b>%s</b>" % GLib.markup_escape_text(_("关于")))
+        head.add_css_class("about-heading")
+        head.set_xalign(0.0)
+        box.append(head)
+
+        text = Gtk.Label()
+        text.set_use_markup(True)
+        text.set_selectable(True)
+        text.set_wrap(True)
+        text.set_xalign(0.0)
+        # a key and its colon, in the sentence's punctuation: 版本： in
+        # Chinese, Version: in English
+        colon = "：" if LANGUAGE == "zh" else ":"
+
+        def key(text):
+            return GLib.markup_escape_text(text) + colon
+
+        text.set_markup("\n".join((
+            key(_("版本")) + "  " + GLib.markup_escape_text(build_label()),
+            key(_("作者")) + "  fanzu8",
+            key(_("更新")) + '  <a href="%s">%s</a>' % (
+                GLib.markup_escape_text(RELEASES_URL),
+                GLib.markup_escape_text(RELEASES_URL)),
+            key(_("隐私")) + "  " + GLib.markup_escape_text(
+                _("不联网、不收集任何数据")),
+        )))
+        text.connect("activate-link", self._open_releases)
+        box.append(text)
+
+        scroll.set_child(box)
+        return scroll
+
+    @staticmethod
+    def _open_releases(*_args):
+        try:
+            Gtk.UriLauncher.new(RELEASES_URL).launch(None, None, None)
+        except Exception:
+            pass
+        return True
+
+    # ---- the sleep record -------------------------------------------------
+    def _sleep_line(self, rec=None):
+        """The row's second line: the anchor, and the last sleep, or why there
+        is none."""
+        rec = rec or load_sleeps()
+        if not rec["anchor"]:
+            return _("还没开启禁止休眠")
+        since = _("自 %s 起") % self._sleep_clock(rec["anchor"])
+        if not rec["naps"]:
+            return since + " · " + _("还没有休眠")
+        at, secs = rec["naps"][0]
+        return (since + " · " + _("最近 %s，%s")
+                % (self._sleep_clock(at), self._sleep_lasted(secs)))
+
+    @staticmethod
+    def _sleep_lasted(secs):
+        if secs < 3600:
+            return _("睡了 %d 分钟") % (secs // 60)
+        return _("睡了 %d 小时 %d 分钟") % (secs // 3600, secs % 3600 // 60)
+
+    @staticmethod
+    def _sleep_clock(ms):
+        """Today's sleep says the time of day; an older one carries the date."""
+        fmt = "%H:%M"
+        if time.strftime("%Y%m%d", time.localtime(ms)) != time.strftime("%Y%m%d"):
+            fmt = "%m-%d " + fmt
+        return time.strftime(fmt, time.localtime(ms))
+
+    def _on_sleep_log(self, row):
+        """The card: the sleeps the record kept, newest first."""
+        rec = load_sleeps()
+        body = "\n".join(
+            self._sleep_clock(at) + " · " + self._sleep_lasted(secs)
+            for at, secs in rec["naps"]) or _("还没有休眠")
+        dlg = Adw.MessageDialog(modal=True, transient_for=self,
+                                heading=_("休眠记录"), body=body)
+        dlg.add_response("ok", _("知道了"))
+        dlg.set_close_response("ok")
+        dlg.present()
+
+    # ---- 通知: the page beside 高级 ----------------------------------------
+    def _notify_state(self):
+        """What the 通知 rows hold, read back from ui.json.
+
+        The number is the row's own; the three answers are read through the
+        shared answers(), so the panel and the notifier can never disagree
+        about a value -- not even a hand-edited one.
+        """
+        ui = load_ui()
+        out = {}
+        for n in NOTIFICATIONS:
+            out[n.key] = {
+                "on": bool(ui.get(f"notify_{n.key}", False)),
+                "at": self._as_int(ui.get(f"notify_{n.key}_at"),
+                                   n.default, n.low, n.high),
+                **answers(ui, n),
+            }
+        return out
+
+    @staticmethod
+    def _as_int(value, fallback, low, high):
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return fallback
+        return max(low, min(high, value))
+
+    def _notify_page(self):
+        """通知: the master switch, then the groups -- the battery's own
+        charge, the plug and the charging state, then one group per kind of
+        reading.
+
+        A notification is two rows, not five: the name with its number and its
+        switch on the first, its three answers on the second -- 通知方式, 次数
+        and 间隔 side by side, the shape Android draws.  So a group stays one
+        card, and the eye can follow a notification from its name to what it
+        does without four rows of labels in between.
+        """
+        page = Adw.PreferencesPage()
+        self._loading = True
+
+        g = Adw.PreferencesGroup()
+        self.row_notify = Adw.SwitchRow(title=_("通知开关"))
+        self.row_notify.add_css_class("notify-master")
+        self.row_notify.set_active(bool(load_ui().get("notify", False)))
+        self.row_notify.connect("notify::active", self._on_notify_master)
+        g.add(self.row_notify)
+        self._spinning = False
+        page.add(g)
+
+        self.notify_rows = {}
+        for group in GROUPS:
+            g = Adw.PreferencesGroup(title=group.title())
+            for key in group.keys:
+                n = NOTIFY_BY_KEY[key]
+                g.add(self._notify_title_row(n, self.notify[n.key]))
+                g.add(self._notify_answers_row(n, self.notify[n.key]))
+            page.add(g)
+
+        self._apply_notify_gate()
+        self._loading = False
+        return page
+
+    def _notify_title_row(self, n, st):
+        """One notification's line of identity: its short name on the left, the
+        number it fires at in the middle -- stepped, with the unit on the value
+        like 上限's percentage -- and the switch at the end.  A state has no
+        number, so its line is the name and the switch, exactly as on Android.
+
+        The name is the table's short word (电源连接 is just 连接 under 电源);
+        the sentence the notification says keeps the full title.
+        """
+        row = Adw.ActionRow()
+        row.add_css_class("compact-status")
+        # a CenterBox, because "the number in the middle" is what it is: a
+        # suffix would push it against the switch and leave the name adrift
+        centre = Gtk.CenterBox()
+        # the row's own side padding, which set_child skips: without it the
+        # name starts at the card's edge and the switch ends at it, instead of
+        # on the same lines as every other row
+        centre.set_margin_start(12)
+        centre.set_margin_end(12)
+        name = Gtk.Label(label=n.short())
+        name.add_css_class("notify-name")
+        name.set_xalign(0.0)
+        centre.set_start_widget(name)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        box.set_valign(Gtk.Align.CENTER)
+
+        spin = None
+        if n.numbered:
+            # A plain SpinButton, and nothing clever on top of it.
+            #
+            # The trap this row fell into once: a SpinButton's `output` signal
+            # only formats the entry when it is *not* numeric, and setting the
+            # text from it while numeric makes GTK re-parse the text back into
+            # the adjustment -- which fired value-changed, which wrote the
+            # model, which rewrote the number.  So: no output formatter, no
+            # numeric filtering; the number is the number, and its unit is a
+            # label beside it, the way the status rows do it.
+            spin = Gtk.SpinButton.new_with_range(n.low, n.high, n.step)
+            spin.set_digits(0)
+            spin.set_numeric(False)
+            spin.set_width_chars(len(str(n.high)) + 1)
+            spin.set_valign(Gtk.Align.CENTER)
+            spin.add_css_class("notify-spin")
+            # the model's value, set under the same guard every other write
+            # uses, so setting it cannot look like the user moving it
+            self._spinning = True
+            spin.set_value(st["at"])
+            self._spinning = False
+            spin.connect("value-changed",
+                         lambda widget, n=n: self._on_notify_at(widget, None, n))
+            box.append(spin)
+            unit = Gtk.Label(label=n.unit.strip())
+            unit.add_css_class("answer-value")
+            unit.set_valign(Gtk.Align.CENTER)
+            box.append(unit)
+
+        centre.set_center_widget(box)
+
+        sw = Gtk.Switch()
+        sw.set_active(bool(st["on"]))
+        sw.set_valign(Gtk.Align.CENTER)
+        sw.connect("notify::active", self._on_notify_item, n)
+        centre.set_end_widget(sw)
+
+        row.set_child(centre)
+        self.notify_rows.setdefault(n.key, {})["on"] = sw
+        self.notify_rows[n.key]["at"] = spin
+        self.notify_rows[n.key]["row"] = row
+        self.notify_rows[n.key]["box"] = box
+        return row
+
+    def _notify_answers_row(self, n, st):
+        """A notification's answers on one line: 通知方式, 次数 and 间隔.
+
+        The three are one loop because they are one thing -- an answer a chip
+        sets -- and the only difference is what each chip holds: the kind's
+        words, the counts the notification offers, or the intervals.  间隔 is
+        the odd one: its labels are units, and at 1次 there is no gap to
+        choose, so the 0 is drawn instead of the picker (see
+        _apply_notify_rows).
+        """
+        row = Adw.ActionRow()
+        row.add_css_class("compact-status")
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        box.set_valign(Gtk.Align.CENTER)
+        # the same 12px in as the row above it, so 通知方式 sits on the same
+        # line as the name it answers -- measured: both now start at 24
+        box.set_margin_start(12)
+        box.set_margin_end(12)
+
+        chips = {}
+        for field, title, items in (
+            ("kind", _("通知方式"), [(text, k) for k, text in spoken_kinds()]),
+            ("times", _("次数"), [(text, c) for c, text in n.counts()]),
+            ("gap", _("间隔"), [(gap_label(secs), secs) for secs, _l in GAPS]),
+        ):
+            caption = Gtk.Label(label=title)
+            caption.add_css_class("answer-caption")
+            box.append(caption)
+            btn, chip = chip_button(
+                title, items, st[field],
+                lambda value, n=n, field=field: self._on_notify_answer(
+                    n, field, value))
+            chip.add_css_class("answer-value")
+            box.append(btn)
+            chips[field] = (btn, chip)
+
+        # the gap's other face: the 0 of a single notification.  Both live in
+        # the same slot and _apply_notify_rows shows one of them.
+        gap_fixed = Gtk.Label(label="0")
+        gap_fixed.add_css_class("dim-label")
+        gap_fixed.add_css_class("answer-value")
+        gap_fixed.set_valign(Gtk.Align.CENTER)
+        gap_fixed.set_margin_start(6)
+        box.append(gap_fixed)
+
+        row.set_child(box)
+        self.notify_rows.setdefault(n.key, {}).update(
+            {"chips": chips, "gap_fixed": gap_fixed, "answers": row})
+        self._apply_notify_rows(n)
+        return row
+
+    def _apply_notify_rows(self, n):
+        """间隔 is drawn either as the picker it is or as the 0 that a single
+        notification's gap is -- one or the other, never both."""
+        row = self.notify_rows[n.key]
+        once = self.notify[n.key]["times"] == 1
+        row["chips"]["gap"][0].set_visible(not once)
+        row["gap_fixed"].set_visible(once)
+
+    def _on_notify_answer(self, n, field, value):
+        """One chip moved one of the three answers: keep it, say it on the
+        chip, and let 间隔 face the count it belongs to."""
+        self.notify[n.key][field] = value
+        self.notify_rows[n.key]["chips"][field][1].set_text(
+            self._answer_text(n, field, value) + "  \u25be")
+        if field == "times":
+            self._apply_notify_rows(n)
+        self._save_notify()
+
+    @staticmethod
+    def _answer_text(n, field, value):
+        if field == "kind":
+            return dict((k, t) for k, t in spoken_kinds()).get(value, "")
+        if field == "times":
+            return n.count_label(value)
+        return gap_label(value)
+
+    def _apply_notify_gate(self):
+        """通知开关 off: every row under it dims and stops taking input.  It is
+        a gate, not a reset -- not one answer changes, so switching it back on
+        finds the page exactly as it was left."""
+        on = bool(self.row_notify.get_active())
+        for row in self.notify_rows.values():
+            row["row"].set_sensitive(on)
+            row["answers"].set_sensitive(on)
+
+    def _on_notify_master(self, row, _pspec):
+        if self._loading:
+            return
+        # the notifier reads this back from ui.json: the switch is the gate,
+        # and off is silent at once (it stops what it is saying)
+        self._save_notify()
+        self._apply_notify_gate()
+
+    def _on_notify_item(self, row, _pspec, n):
+        if self._loading:
+            return
+        self.notify[n.key]["on"] = bool(row.get_active())
+        self._save_notify()
+
+    def _on_notify_at(self, row, _pspec, n):
+        # _loading: the page is being built.  _spinning: we set the number
+        # ourselves (the model's value on build, a clamp after a press), and
+        # that is not the user moving it.
+        if self._loading or self._spinning:
+            return
+        at = self._keep_apart(n, int(round(row.get_value())))
+        if at != int(round(row.get_value())):
+            self._spinning = True
+            row.set_value(at)
+            self._spinning = False
+        self.notify[n.key]["at"] = at
+        self._save_notify()
+        # a stepper only moves a line: it must not turn eight steps into eight
+        # banners, so what the notifier remembers stays as it is
+
+    def _keep_apart(self, n, at):
+        return keep_apart(n, at, {k: v["at"] for k, v in self.notify.items()})
+
+    def _save_notify(self):
+        d = load_ui()
+        d["notify"] = bool(self.row_notify.get_active())
+        for n in NOTIFICATIONS:
+            st = self.notify[n.key]
+            d[f"notify_{n.key}"] = bool(st["on"])
+            d[f"notify_{n.key}_at"] = int(st["at"])
+            d[f"notify_{n.key}_kind"] = st["kind"]
+            d[f"notify_{n.key}_times"] = int(st["times"])
+            d[f"notify_{n.key}_gap"] = int(st["gap"])
+        save_ui(d)
+
     def _save_ui(self):
         if not self._chart_ready:
             return
@@ -1686,6 +2397,36 @@ class Window(Adw.ApplicationWindow):
         self.chart.queue_draw()
         self._save_ui()
 
+    def _on_live(self, row, _pspec):
+        """实时采集 moved: the rows and the chart follow it, and 图形化 cannot
+        be left on over a table that is not being read."""
+        self.live = bool(self.sw_live.get_active())
+        self.sw_record.set_sensitive(self.live)
+        self.chart.message = None if self.live else _("实时采集已关闭")
+        if not self.live:
+            # the switch it gates goes first, which clears the curve
+            self.sw_record.set_active(False)
+            for label in self.f.values():
+                label.set_text("—")
+        else:
+            self.chart.recording = self.record
+        d = load_ui()
+        d["live"] = self.live
+        save_ui(d)
+
+    def _on_record(self, row, _pspec):
+        """采集 moved: remember it, and let refresh() decide from here."""
+        self.record = bool(self.sw_record.get_active())
+        self.chart.recording = self.record
+        if not self.record:
+            # the curve goes with the switch: what is left is the page's
+            # "off", drawn once -- and then nothing at all until it is on
+            self.chart.clear()
+            self.chart.queue_draw()
+        d = load_ui()
+        d["record"] = self.record
+        save_ui(d)
+
     def _on_metric_toggled(self, btn, key):
         if btn.get_active() and key not in self.chart.selected:
             # keep METRICS order so the Y axes never jump around
@@ -1702,6 +2443,13 @@ class Window(Adw.ApplicationWindow):
         paint = now - self._painted_at >= SAMPLE_MS / 1000.0
         if paint:
             self._painted_at = now
+        # the sleep record is written by the notifier, a file away: read it at
+        # its own pace rather than at the panel's
+        if self._sleep_at is None or now - self._sleep_at >= 2.0:
+            self._sleep_at = now
+            rec = load_sleeps()
+            self.sleep_count.set_text(f'{rec["count"]}' + _("次"))
+            self.row_sleep.set_subtitle(self._sleep_line(rec))
         s = read_state()
         self._loading = True
         if s:
@@ -1741,6 +2489,15 @@ class Window(Adw.ApplicationWindow):
         if w != self._last_w:
             self._last_w = w
             self._apply_col_widths()
+
+        # 实时采集 off: the phone is not read at all.  The limits and 禁止休眠
+        # above still read the daemon's state.json, so those switches keep
+        # working -- it is the readings that stop.
+        if not self.live:
+            for label in self.f.values():
+                label.set_text("—")
+            GLib.timeout_add(self._tick_ms(), self.refresh)
+            return False
 
         # live battery metrics straight from sysfs
         cap = read_int(os.path.join(BAT, "capacity"))
@@ -1822,7 +2579,12 @@ class Window(Adw.ApplicationWindow):
         # power is plotted as a magnitude: it tracks the current's shape almost
         # exactly (P = V·I, V nearly constant), so keeping its sign on top of
         # the current's would just make the two curves overlap.
-        if self._sample_due(now):
+        # ... and only while 采集 is on.  Turning it off stops the buffer
+        # growing (the live numbers above keep reading: the table is a look,
+        # the chart is a record).  _stored_at is left alone, so the first
+        # sample after switching on is due at once rather than a whole
+        # interval later.
+        if self.record and self._sample_due(now):
             self._stored_at = now
             self.chart.add_sample({
                 "voltage_v": v,
@@ -1832,7 +2594,9 @@ class Window(Adw.ApplicationWindow):
                 "temp_c": t,
                 "capacity": float(cap) if cap is not None else None,
             })
-        if paint:
+        # ... and only while 采集 is on: an off chart has nothing new to show,
+        # so it is not repainted at all -- the live table above still is
+        if paint and self.record:
             self.chart.queue_draw()
         # the interval can change while we run, so ask to be woken at its pace
         GLib.timeout_add(self._tick_ms(), self.refresh)
