@@ -107,7 +107,7 @@ sudo ./uninstall.sh        # 全部清掉，并把充电器恢复成"允许 + �
 标准库 Python，没有 pip 依赖；测试不需要手机、不需要 GTK，也不需要 Android SDK：
 
 ```sh
-python3 -m unittest        # 270 个用例
+python3 -m unittest        # 271 个用例
 ```
 
 测试不需要手机、GTK，也不需要 Android SDK；CI 在 Python 3.10–3.13 上跑。

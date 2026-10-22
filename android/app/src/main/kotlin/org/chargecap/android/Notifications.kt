@@ -19,6 +19,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -51,6 +52,18 @@ const val MONITOR_CHANNEL = "chargecap-monitor"
  *  with a page. */
 private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 private var watching: Job? = null
+
+/**
+ * How often a threshold is judged, in milliseconds.
+ *
+ * The display reads at 500 ms because a number on screen should look live;
+ * a battery's temperature, voltage and current do not need that for a
+ * reminder -- three seconds is the same rate the postmarketOS daemon publishes
+ * at, and it turns 6 judgments a second into one every third second.  A
+ * crossing between two judgments is seen at the next one, so a plug or a
+ * temperature spike is noticed within three seconds.
+ */
+private const val JUDGE_MS = 3000L
 
 /** The reminder each notification is in the middle of, by its key. */
 private val reminders = mutableMapOf<String, Job>()
@@ -94,8 +107,15 @@ fun startNotifier(context: Context) {
     if (watching?.isActive == true) return
     val app = context.applicationContext
     watching = scope.launch {
+        var judgedAt = 0L
         Monitor.state.collect { sample ->
-            NotifyRules.sample(sample) { rule -> remind(app, rule) }
+            val now = SystemClock.elapsedRealtime()
+            // the first sample arms the rules at once; after that, every
+            // JUDGE_MS -- the readings in between are for the panel
+            if (judgedAt == 0L || now - judgedAt >= JUDGE_MS) {
+                judgedAt = now
+                NotifyRules.sample(sample) { rule -> remind(app, rule) }
+            }
         }
     }
 }

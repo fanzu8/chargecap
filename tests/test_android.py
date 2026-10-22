@@ -1746,6 +1746,17 @@ class BackgroundTest(SourceTest):
         self.assertLacks(service, "Monitor.state.collect")
         self.assertLacks(service, "ongoingText")
 
+    def test_thresholds_are_judged_every_three_seconds(self):
+        """The panel reads at 500 ms; a reminder does not need to.  The rules
+        are judged at the postmarketOS daemon's own rate -- three seconds --
+        and the first sample still arms them at once."""
+        notifier = kotlin("Notifications.kt")
+        self.assertHas(notifier, "JUDGE_MS = 3000L")
+        self.assertHas(notifier, "judgedAt == 0L || now - judgedAt >= JUDGE_MS")
+        self.assertHas(notifier, "Monitor.state.collect")
+        # ... and the display is still the 500 ms sample
+        self.assertHas(kotlin("Battery.kt"), "const val SAMPLE_MS = 500L")
+
     def test_the_line_says_what_is_watched(self):
         """The shade names the notifications that are on, with their lines --
         and follows the page when a switch or a stepper moves."""
