@@ -12,6 +12,7 @@
 package org.chargecap.android
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.PowerManager
 
 // Where the per-user UI preferences live -- the Android answer to the GTK
@@ -77,6 +78,17 @@ class Prefs(context: Context) {
      * nothing, so turning the master switch on does not start a page of
      * reminders nobody chose.
      */
+    /** The background monitor listens here for switches and lines changed
+     *  while it is running; the listener must be kept by its owner, because
+     *  SharedPreferences holds only a weak reference. */
+    fun listen(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        store.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    fun unlisten(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        store.unregisterOnSharedPreferenceChangeListener(listener)
+    }
+
     fun notifyItem(key: String): Boolean = store.getBoolean("notify_$key", false)
 
     fun setNotifyItem(key: String, on: Boolean) =

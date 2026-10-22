@@ -83,7 +83,7 @@ ANDROID_ONLY = {
     "电量、温度、电压、电流或功率越过你设的线时提醒",
     # the ongoing notification of the foreground monitor
     "由于通知需要，后台运行中", "后台运行",
-    "通知开关打开时保持后台运行",
+    "通知开关打开时保持后台运行", "没有打开的通知项",
 }
 
 # the shared vocabulary: rename a label on one side and the other has to
@@ -1745,6 +1745,18 @@ class BackgroundTest(SourceTest):
         self.assertHas(service, 'tr("由于通知需要，后台运行中")')
         self.assertLacks(service, "Monitor.state.collect")
         self.assertLacks(service, "ongoingText")
+
+    def test_the_line_says_what_is_watched(self):
+        """The shade names the notifications that are on, with their lines --
+        and follows the page when a switch or a stepper moves."""
+        service = kotlin("MonitorService.kt")
+        self.assertHas(service,
+                       "NOTIFICATIONS.filter { prefs.notifyItem(it.key) }")
+        self.assertHas(service, "prefs.notifyAt(n.key, n.default)")
+        self.assertHas(service, "BigTextStyle()")
+        self.assertHas(service, "prefs.listen(changed)")
+        self.assertHas(service, "OnSharedPreferenceChangeListener")
+        self.assertHas(service, "notify(ONGOING_ID, notification())")
 
     def test_the_ongoing_line_is_low_and_silent(self):
         notifier = kotlin("Notifications.kt")

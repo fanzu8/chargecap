@@ -12,10 +12,12 @@
 package org.chargecap.android
 
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -39,9 +41,17 @@ import androidx.core.content.ContextCompat
  * is not a crossing).
  */
 class MonitorService : Service() {
+    private lateinit var prefs: Prefs
+
+    /** The switches and lines as the page changes them; the line follows. */
+    private val changed =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == null || key.startsWith("notify")) updateNotification()
+        }
+
     override fun onCreate() {
         super.onCreate()
-        val prefs = Prefs(this)
+        prefs = Prefs(this)
         createNotificationChannel(this)
 
         // the same starts MainActivity makes; every one of them is safe to
@@ -60,6 +70,7 @@ class MonitorService : Service() {
         } else {
             startForeground(ONGOING_ID, note)
         }
+        prefs.listen(changed)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -72,6 +83,7 @@ class MonitorService : Service() {
     }
 
     override fun onDestroy() {
+        prefs.unlisten(changed)
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
@@ -87,11 +99,7 @@ class MonitorService : Service() {
         NotifyRules.arm(rules)
     }
 
-    /**
-     * The one line Android requires of a foreground service, and nothing else:
-     * no readings, no ticker.  The service still samples for the rules; what
-     * it says in the shade is only why it is there.
-     */
+    /** What the line says: why the service is there, and what it watches. */
     private fun notification(): Notification {
         val open = PendingIntent.getActivity(
             this, 0,
@@ -99,9 +107,22 @@ class MonitorService : Service() {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        val lines = NOTIFICATIONS.filter { prefs.notifyItem(it.key) }.map { n ->
+            if (n.numbered) {
+                "${n.title()} ${prefs.notifyAt(n.key, n.default)}${n.unit.trim()}"
+            } else {
+                n.title()
+            }
+        }
+        val body = if (lines.isEmpty()) tr("没有打开的通知项")
+                   else lines.joinToString("\n")
+        val summary = if (lines.isEmpty()) tr("没有打开的通知项")
+                      else lines.joinToString(" · ")
         return NotificationCompat.Builder(this, MONITOR_CHANNEL)
             .setSmallIcon(R.drawable.ic_notify)
             .setContentTitle(tr("由于通知需要，后台运行中"))
+            .setContentText(summary)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setOngoing(true)
             .setSilent(true)
             .setShowWhen(false)
@@ -110,6 +131,11 @@ class MonitorService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(open)
             .build()
+    }
+
+    private fun updateNotification() {
+        getSystemService(NotificationManager::class.java)
+            ?.notify(ONGOING_ID, notification())
     }
 
     companion object {

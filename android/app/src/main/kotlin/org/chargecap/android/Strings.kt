@@ -180,6 +180,7 @@ private val EN = mapOf(
     "后台运行" to "Background running",
     "通知开关打开时保持后台运行" to
         "Keeps running in the background while notifications are on",
+    "没有打开的通知项" to "No notifications are switched on",
     "通知横幅与声音" to "Banners and sound",
     "在通知设置里放开横幅和声音" to "Turn the banner and the sound on in the notification settings",
     "打开" to "Open",
