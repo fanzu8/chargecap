@@ -323,7 +323,7 @@ object Monitor {
      * nothing is looking, [stop] turns the reader off altogether.
      */
     fun start(context: Context, everyMs: Long = SAMPLE_MS) {
-        val ms = everyMs.coerceAtLeast(100L)
+        val ms = everyMs.coerceAtLeast(10L)
         if (job?.isActive == true && readMs == ms) return
         job?.cancel()
         readMs = ms
@@ -334,6 +334,7 @@ object Monitor {
             var maxMA: Double? = null
             var seq = 0L
             var storedAt = 0L
+            var publishedAt = 0L
             while (isActive) {
                 val now = SystemClock.elapsedRealtime()
                 // the sleep record rides on the same pass: the wall clock
@@ -350,9 +351,9 @@ object Monitor {
                     currentMinMA = minMA,
                     currentMaxMA = maxMA,
                 )
-                // the chart's clock: one sample per interval, never faster
-                // than the reader itself
-                val due = intervalMs <= readMs || now - storedAt >= intervalMs
+                // the chart's clock: one stored sample per interval, whatever
+                // the reader itself is doing (the chart may read faster)
+                val due = now - storedAt >= intervalMs
                 if (due && recording) {
                     storedAt = now
                     buffer.add(
@@ -369,7 +370,12 @@ object Monitor {
                         ),
                     )
                 }
-                _state.value = snapshot
+                // the page's clock: 500 ms however fast the chart is sampling,
+                // so the numbers (and the drawing) look steady
+                if (now - publishedAt >= SAMPLE_MS) {
+                    publishedAt = now
+                    _state.value = snapshot
+                }
                 delay(readMs)
             }
         }
@@ -397,10 +403,17 @@ object Sampling {
     fun apply(context: Context, prefs: Prefs) {
         Monitor.intervalMs = prefs.sampleMs.toLong()
         val live = prefs.live && visible
+        val chart = live && prefs.record
         // the chart rides on the live reader; the 3 s reader has no page
-        Monitor.recording = live && prefs.record
+        Monitor.recording = chart
         when {
-            live -> Monitor.start(context, Monitor.SAMPLE_MS)
+            // the chart may want samples faster than the page's 500 ms; the
+            // page itself still repaints at 500
+            live -> Monitor.start(
+                context,
+                if (chart) minOf(Monitor.SAMPLE_MS, prefs.sampleMs.toLong())
+                else Monitor.SAMPLE_MS,
+            )
             prefs.notify -> Monitor.start(context, Monitor.RULES_MS)
             else -> Monitor.stop()
         }

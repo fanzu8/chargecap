@@ -425,13 +425,13 @@ class SamplingTest(unittest.TestCase):
         self.assertIn('.get("sample_ms")', self.src)
         self.assertIn("SAMPLE_MS_CHOICE", self.src)
 
-    def test_the_tick_is_the_panels_own_500ms(self):
-        """The chart's interval decides what is stored, not how often the phone
-        is read: 0.01 s must not make a 100 Hz reader, 20 s must not freeze the
-        live numbers."""
+    def test_the_tick_is_the_charts_interval_while_it_records(self):
+        """The chart may want samples faster than 500 ms; with it off, 0.01 s
+        must not make a 100 Hz reader and 20 s must not freeze the numbers."""
         self.assertIn("def _tick_ms(self):", self.src)
+        self.assertIn("if self.live and self.record:", self.src)
+        self.assertIn("return max(10, min(SAMPLE_MS, SAMPLE_MS_CHOICE))", self.src)
         self.assertIn("return SAMPLE_MS", self.src)
-        self.assertNotIn("min(SAMPLE_MS, SAMPLE_MS_CHOICE)", self.src)
         self.assertIn("GLib.timeout_add(self._tick_ms(), self.refresh)", self.src)
         # ... and every way out re-arms it: 实时采集 off returns early, so the
         # chain is armed there too (still one chain -- each pass arms the next)

@@ -460,11 +460,15 @@ class ChartTest(SourceTest):
         into a 100 Hz reader, and a 20 s one must not freeze the numbers."""
         battery = kotlin("Battery.kt")
         self.assertHas(battery, "var intervalMs: Long = SAMPLE_MS")
-        self.assertHas(battery, "val due = intervalMs <= readMs || now - storedAt >= intervalMs")
+        self.assertHas(battery, "val due = now - storedAt >= intervalMs")
+        self.assertHas(battery, "if (now - publishedAt >= SAMPLE_MS)")
         self.assertHas(battery, "delay(readMs)")
         self.assertHas(battery, "const val RULES_MS = 3000L")
-        # the chart's clock is set from the state, not from the reader
+        # the chart's clock is set from the state, not from the reader; the
+        # reader follows it only while the chart records
         self.assertHas(battery, "Monitor.intervalMs = prefs.sampleMs.toLong()")
+        self.assertHas(battery,
+                       "if (chart) minOf(Monitor.SAMPLE_MS, prefs.sampleMs.toLong())")
         self.assertHas(kotlin("Prefs.kt"), 'store.getInt("sample_ms", DEFAULT_SAMPLE_MS)')
 
     def test_sample_rate_and_history_match_the_gtk_app(self):
@@ -1725,8 +1729,11 @@ class SamplingTest(SourceTest):
         self.assertHas(battery, "object Sampling")
         self.assertHas(battery, "@Volatile\n    var visible: Boolean = false")
         self.assertHas(battery, "val live = prefs.live && visible")
-        self.assertHas(battery, "Monitor.recording = live && prefs.record")
-        self.assertHas(battery, "live -> Monitor.start(context, Monitor.SAMPLE_MS)")
+        self.assertHas(battery, "val chart = live && prefs.record")
+        self.assertHas(battery, "Monitor.recording = chart")
+        self.assertHas(battery,
+                       "if (chart) minOf(Monitor.SAMPLE_MS, prefs.sampleMs.toLong())")
+        self.assertHas(battery, "else Monitor.SAMPLE_MS")
         self.assertHas(battery, "prefs.notify -> Monitor.start(context, Monitor.RULES_MS)")
         self.assertHas(battery, "else -> Monitor.stop()")
 

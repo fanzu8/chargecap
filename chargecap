@@ -1823,12 +1823,16 @@ class Window(Adw.ApplicationWindow):
 
     # ---- sampling ----
     def _tick_ms(self):
-        """The panel's own clock: 500 ms, whatever the chart is set to.
+        """How often to read: the chart's interval while the chart records,
+        otherwise the panel's own 500 ms.
 
-        The chart's interval decides what is stored, not how often the phone is
-        read; a 0.01 s setting must not turn the panel into a 100 Hz reader,
-        and a 20 s one must not freeze the live numbers.
+        The chart is the one reader that may want samples faster than 500 ms;
+        with it off, a 0.01 s setting must not turn the panel into a 100 Hz
+        reader, and a 20 s one must not freeze the live numbers.  The values
+        themselves are still painted at 500 ms (see refresh's paint clock).
         """
+        if self.live and self.record:
+            return max(10, min(SAMPLE_MS, SAMPLE_MS_CHOICE))
         return SAMPLE_MS
 
     def _sample_due(self, now):
