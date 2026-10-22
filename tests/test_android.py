@@ -455,18 +455,20 @@ class ChartTest(SourceTest):
         self.assertIn('("15s", 15), ("30s", 30),', read(ROOT, "chargecap"))
 
     def test_the_panel_and_the_chart_run_on_two_clocks(self):
-        """The panel reads at 500 ms and the rules at 3 s; the chart's interval
-        only decides what is stored -- a 0.01 s setting must not turn the phone
-        into a 100 Hz reader, and a 20 s one must not freeze the numbers."""
+        """The panel publishes at 500 ms and the rules judge at 3 s; the chart,
+        while it records, may read faster at its own interval.  With the chart
+        off, a 0.01 s setting must not turn the phone into a 100 Hz reader, and
+        a 20 s one must not freeze the numbers."""
         battery = kotlin("Battery.kt")
         self.assertHas(battery, "var intervalMs: Long = SAMPLE_MS")
-        self.assertHas(battery, "val due = now - storedAt >= intervalMs")
+        self.assertHas(battery, "val due = storeDue || now - storedAt >= intervalMs")
+        self.assertHas(battery, "fun resetStore() {")
         self.assertHas(battery, "if (now - publishedAt >= SAMPLE_MS)")
         self.assertHas(battery, "delay(readMs)")
         self.assertHas(battery, "const val RULES_MS = 3000L")
-        # the chart's clock is set from the state, not from the reader; the
-        # reader follows it only while the chart records
-        self.assertHas(battery, "Monitor.intervalMs = prefs.sampleMs.toLong()")
+        # the chart's clock is set from the state; the reader follows it only
+        # while the chart records
+        self.assertHas(battery, "Monitor.intervalMs = chartMs")
         self.assertHas(battery,
                        "if (chart) minOf(Monitor.SAMPLE_MS, prefs.sampleMs.toLong())")
         self.assertHas(kotlin("Prefs.kt"), 'store.getInt("sample_ms", DEFAULT_SAMPLE_MS)')
@@ -834,8 +836,7 @@ class NotifyPageTest(SourceTest):
         the one flow."""
         self.assertHas(self.state(), "Monitor.state")
         self.assertHas(self.state(), "Monitor.buffer")
-        self.assertHas(kotlin("Battery.kt"),
-                       "Monitor.intervalMs = prefs.sampleMs.toLong()")
+        self.assertHas(kotlin("Battery.kt"), "Monitor.intervalMs = chartMs")
         for name in SOURCES:
             if name in ("Battery.kt", "AppState.kt", "Notifications.kt",
                         "Voice.kt"):
@@ -1730,6 +1731,7 @@ class SamplingTest(SourceTest):
         self.assertHas(battery, "@Volatile\n    var visible: Boolean = false")
         self.assertHas(battery, "val live = prefs.live && visible")
         self.assertHas(battery, "val chart = live && prefs.record")
+        self.assertHas(battery, "if (chart && !Monitor.recording) Monitor.resetStore()")
         self.assertHas(battery, "Monitor.recording = chart")
         self.assertHas(battery,
                        "if (chart) minOf(Monitor.SAMPLE_MS, prefs.sampleMs.toLong())")

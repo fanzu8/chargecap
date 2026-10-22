@@ -314,6 +314,15 @@ object Monitor {
     private var readMs: Long = SAMPLE_MS
 
     /**
+     * The next read stores a chart sample even if [intervalMs] has not elapsed
+     * since the last one.  Set when the interval or the switch moves, so a new
+     * setting shows a point at once instead of looking frozen for up to the
+     * old (or the new) interval.
+     */
+    @Volatile
+    private var storeDue = true
+
+    /**
      * One reader at the pace the caller needs.
      *
      * [intervalMs] is the chart's own clock and never changes how often the
@@ -352,9 +361,11 @@ object Monitor {
                     currentMaxMA = maxMA,
                 )
                 // the chart's clock: one stored sample per interval, whatever
-                // the reader itself is doing (the chart may read faster)
-                val due = now - storedAt >= intervalMs
+                // the reader itself is doing (the chart may read faster).
+                // storeDue forces one now when the interval or the switch moved
+                val due = storeDue || now - storedAt >= intervalMs
                 if (due && recording) {
+                    storeDue = false
                     storedAt = now
                     buffer.add(
                         now,
@@ -386,6 +397,11 @@ object Monitor {
         job?.cancel()
         job = null
     }
+
+    /** The chart's setting moved: store the next sample at once. */
+    fun resetStore() {
+        storeDue = true
+    }
 }
 
 /**
@@ -401,10 +417,15 @@ object Sampling {
     var visible: Boolean = false
 
     fun apply(context: Context, prefs: Prefs) {
-        Monitor.intervalMs = prefs.sampleMs.toLong()
+        val chartMs = prefs.sampleMs.toLong()
+        if (Monitor.intervalMs != chartMs) {
+            Monitor.intervalMs = chartMs
+            Monitor.resetStore()
+        }
         val live = prefs.live && visible
         val chart = live && prefs.record
         // the chart rides on the live reader; the 3 s reader has no page
+        if (chart && !Monitor.recording) Monitor.resetStore()
         Monitor.recording = chart
         when {
             // the chart may want samples faster than the page's 500 ms; the

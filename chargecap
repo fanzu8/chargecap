@@ -463,7 +463,7 @@ spinbutton.notify-spin button { padding: 3px 7px; min-width: 24px; min-height: 2
 
 .charge-off { color: #e5a50a; }
 /* the language switch sits in the header bar and stays as small as it can */
-button.lang-btn { min-width: 0px; min-height: 0px; padding: 1px 7px; }
+button.lang-btn { min-width: 0px; min-height: 0px; padding: 1px 3px; }
 /* 设置's gear: the two buttons beside it are words, so this one carries the
    whole target -- 24px of glyph in a 36px square, rather than a small icon
    floating in a wide bar */
@@ -472,7 +472,7 @@ button.gear-btn { font-size: 24px; min-width: 36px; min-height: 36px;
 /* 关于's heading: a size up from the four lines under it, which are the
    panel's normal text */
 label.about-heading { font-size: 18px; }
-button.lang-btn label { font-size: 10px; }
+button.lang-btn label { font-size: 9px; }
 /* the two page tabs in the header: words only, small, the way the Android app
    has them -- Adw's own switcher clips "Notifications" beside the switches */
 button.tab-btn { min-width: 0px; min-height: 0px; padding: 3px 12px; }
@@ -1868,6 +1868,9 @@ class Window(Adw.ApplicationWindow):
             return
         self._sample_pop.popdown()
         SAMPLE_MS_CHOICE = want
+        # the next refresh stores a point at once: a new interval must not
+        # leave the curve frozen for the rest of the old one
+        self._stored_at = 0
         d = load_ui()
         d["sample_ms"] = want
         save_ui(d)
@@ -2427,6 +2430,10 @@ class Window(Adw.ApplicationWindow):
         """采集 moved: remember it, and let refresh() decide from here."""
         self.record = bool(self.sw_record.get_active())
         self.chart.recording = self.record
+        # the first point of a fresh curve appears on the next refresh, not
+        # one whole interval later
+        if self.record:
+            self._stored_at = 0
         if not self.record:
             # the curve goes with the switch: what is left is the page's
             # "off", drawn once -- and then nothing at all until it is on

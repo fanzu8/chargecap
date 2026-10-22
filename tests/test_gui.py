@@ -420,6 +420,21 @@ class SamplingTest(unittest.TestCase):
         # 0.5 s is both the panel's readout and what a fresh install records
         self.assertIn(("0.5s", 500), samples)
 
+    def test_a_new_interval_stores_at_once(self):
+        """Changing the interval must not leave the curve frozen for the rest
+        of the old one: the next refresh stores a point."""
+        sample = self.src[self.src.index("def _on_sample("):]
+        sample = sample[:sample.index("\n    def ")]
+        self.assertIn("self._stored_at = 0", sample)
+        record = self.src[self.src.index("def _on_record("):]
+        record = record[:record.index("\n    def ")]
+        self.assertIn("if self.record:", record)
+        self.assertIn("self._stored_at = 0", record)
+        # the two header words are smaller and closer than the tabs
+        self.assertIn("button.lang-btn label { font-size: 9px; }", self.src)
+        self.assertIn("button.lang-btn { min-width: 0px; min-height: 0px; "
+                      "padding: 1px 3px; }", self.src)
+
     def test_the_interval_is_remembered(self):
         self.assertIn('d["sample_ms"] = want', self.src)
         self.assertIn('.get("sample_ms")', self.src)
