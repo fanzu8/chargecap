@@ -44,6 +44,9 @@ import kotlinx.coroutines.launch
 /** The channel id, stored by Android for good: a posted notification keeps it. */
 const val NOTIFY_CHANNEL = "chargecap"
 
+/** The low, silent channel of the ongoing background notification. */
+const val MONITOR_CHANNEL = "chargecap-monitor"
+
 /** The app's own reader of the monitor's flow, with the process rather than
  *  with a page. */
 private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -64,6 +67,20 @@ fun createNotificationChannel(context: Context) {
         description = tr("电量、温度、电压、电流或功率越过你设的线时提醒")
     }
     manager.createNotificationChannel(channel)
+
+    // the service's own line: low importance, no sound, no badge -- it is a
+    // statement that monitoring is on, not a message to read
+    val monitor = NotificationChannel(
+        MONITOR_CHANNEL,
+        tr("后台监控"),
+        NotificationManager.IMPORTANCE_LOW,
+    ).apply {
+        description = tr("通知开关打开时保持后台读取，越线才能提醒")
+        setShowBadge(false)
+        setSound(null, null)
+        enableVibration(false)
+    }
+    manager.createNotificationChannel(monitor)
 }
 
 /**

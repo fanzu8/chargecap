@@ -17,6 +17,15 @@
          runtime permission, asked for when the 通知 master switch goes on -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- The background half: with 通知开关 on, the rules have to keep reading
+         while the app is off screen.  A foreground service is the only thing
+         Android leaves running for that, and it must say what it is for. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- ... and start again after a reboot, when the switch was left on -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <!-- 自启动: every vendor keeps its own screen and there is no API for it.
          Naming the packages is what lets an explicit Intent reach them from
          Android 11 on; the app still falls back to its own page. -->
@@ -54,6 +63,29 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The monitor: one foreground service, with the small ongoing
+             notification Android requires of it.  specialUse is the honest
+             type: a battery threshold is not a sync, a call or a playback. -->
+        <service
+            android:name=".MonitorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="battery threshold notifications" />
+        </service>
+
+        <!-- 自启动's other half: the vendor switch lets the process start,
+             this is what asks for it after a reboot -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

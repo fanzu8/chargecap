@@ -63,7 +63,11 @@ there; the nodes are found by the attributes they expose — see `TODO.md`.
 
 - **通知**: many thresholds of your own, a reminder when each is crossed --
   banner or voice, and the voice takes a repeat count.  It doubles as an
-  elderly phone that speaks the charge state out loud.
+  elderly phone that speaks the charge state out loud.  On Android, 通知开关
+  also starts a low-priority foreground service, with a small ongoing
+  后台监控 line in the shade: that is what keeps the readings coming while the
+  app is off screen.  Autostart and battery whitelists alone do not do it --
+  Android freezes ordinary background processes.
 - **Hysteresis**: charging stops at the **upper** limit and resumes at the
   **lower** one; in between nothing changes.  Defaults 50 / 45 (%).
 - **Master switch**: with it off, charging is left completely alone (a non-zero
@@ -113,8 +117,9 @@ there; the nodes are found by the attributes they expose — see `TODO.md`.
 
 Install the APK: take `chargecap-<version>-universal.apk` from
 [Releases](https://github.com/fanzu8/chargecap/releases) and open it on the phone
-(or `adb install -r` it).  Its permissions are `WAKE_LOCK` and the notification
-one Android 13 asks for; it opens in dark mode following the system language.
+(or `adb install -r` it).  Its permissions are `WAKE_LOCK`, the notification one Android 13 asks for, and
+the foreground-service and boot-completed pair that keep the rules alive with
+the screen off; it opens in dark mode following the system language.
 To build it yourself, see [`android/README.md`](android/README.md).
 
 ### postmarketOS
@@ -139,7 +144,7 @@ Stdlib Python, no pip dependencies; the tests need neither a phone nor GTK (nor,
 for the Android sources they also check, an Android SDK):
 
 ```sh
-python3 -m unittest        # 264 tests
+python3 -m unittest        # 269 tests
 ```
 
 They need neither a phone nor GTK (nor an Android SDK for the sources they

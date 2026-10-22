@@ -83,7 +83,9 @@
 
 直接装 APK：从 [Releases](https://github.com/fanzu8/chargecap/releases) 下载
 `chargecap-<版本>-universal.apk`，在手机上打开安装（或 `adb install -r` 它）。
-权限只有两个：`WAKE_LOCK`，和 Android 13 起才会问的通知权限。第一次打开就是暗色、跟随系统语言。
+权限有 `WAKE_LOCK`、Android 13 起才会问的通知权限，以及让通知在没有界面时继续工作的前台服务 / 开机启动两项。第一次打开就是暗色、跟随系统语言。
+
+打开 `通知开关` 后，状态栏会常驻一条低优先级的 `后台监控` 通知 —— 这是 Android 允许应用在后台持续读取的唯一方式；只开厂商的“自启动 / 电池白名单”不够，普通后台进程会被系统冻结。
 想自己编译，见 [`android/README.md`](android/README.md)。
 
 ### postmarketOS
@@ -107,7 +109,7 @@ sudo ./uninstall.sh        # 全部清掉，并把充电器恢复成"允许 + �
 标准库 Python，没有 pip 依赖；测试不需要手机、不需要 GTK，也不需要 Android SDK：
 
 ```sh
-python3 -m unittest        # 264 个用例
+python3 -m unittest        # 269 个用例
 ```
 
 测试不需要手机、GTK，也不需要 Android SDK；CI 在 Python 3.10–3.13 上跑。

@@ -125,10 +125,29 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 `org.chargecap.android`, Android 7.0 (API 24) and up, tested on Android 9 (EMUI
-9.1).  Two permissions: `WAKE_LOCK` for 禁止休眠, and `POST_NOTIFICATIONS` --
-granted at install up to Android 12, asked for when 通知开关 goes on
-from 13, where the `<queries>` also names the vendor packages an autostart
-Intent has to reach.  AGP 9.0.1 (which compiles Kotlin
+9.1).  Permissions: `WAKE_LOCK` for 禁止休眠; `POST_NOTIFICATIONS` -- granted at
+install up to Android 12, asked for when 通知开关 goes on from 13; and
+`FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_SPECIAL_USE` /
+`RECEIVE_BOOT_COMPLETED` for the background monitor.  The `<queries>` also names
+the vendor packages an autostart Intent has to reach.
+
+## The background
+
+Android freezes ordinary background processes, and the vendor's 自启动 and
+battery whitelist do not change that: a rule that needs a reading every second
+will stop the moment the app leaves the screen.  WeChat and friends look alive
+because they use the system push channels (Huawei / Xiaomi / OPPO / vivo push,
+or FCM), which wake them when a message arrives -- not because of a switch in
+settings.
+
+chargecap's readings are not pushed from anywhere; they have to be sampled.  So
+通知开关 starts `MonitorService`, a foreground service with a low, silent,
+ongoing 后台监控 notification (the price Android charges for staying awake).
+It owns the sampler, the rules and the voice, is `START_STICKY`, and
+`BootReceiver` starts it again at boot or after an update when the switch was
+left on.  The notification updates at most once a minute -- it says "still
+here", it is not a ticker.  Turning 通知开关 off stops the service and its
+notification.  AGP 9.0.1 (which compiles Kotlin
 itself), Kotlin 2.3.20, Compose BOM 2026.03.01.  `tests/test_android.py` holds it
 to the GTK app -- metric table, windows, type scale, tick formats, colours and
 every translated string -- and `cd .. && python3 -m unittest` needs no phone and

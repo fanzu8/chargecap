@@ -30,7 +30,8 @@ KOTLIN = os.path.join(MAIN, "kotlin", "org", "chargecap", "android")
 
 SOURCES = ("Strings.kt", "Battery.kt", "Chart.kt", "AppState.kt", "Rules.kt",
            "Pages.kt", "Panel.kt", "MainActivity.kt", "Notifications.kt",
-           "Prefs.kt", "Sleep.kt", "SystemSettings.kt", "Theme.kt", "Voice.kt")
+           "MonitorService.kt", "BootReceiver.kt", "Prefs.kt", "Sleep.kt",
+           "SystemSettings.kt", "Theme.kt", "Voice.kt")
 
 # the strings the Android UI needs and the GTK app has no counterpart for:
 # Android reports the port it is plugged into (AC / USB / wireless / dock)
@@ -80,6 +81,9 @@ ANDROID_ONLY = {
     # the notification channel: the row the system's 通知 page hinges on
     "充电提醒",
     "电量、温度、电压、电流或功率越过你设的线时提醒",
+    # the ongoing notification of the foreground monitor
+    "正在后台监控", "后台监控",
+    "通知开关打开时保持后台读取，越线才能提醒",
 }
 
 # the shared vocabulary: rename a label on one side and the other has to
@@ -823,14 +827,15 @@ class NotifyPageTest(SourceTest):
         """The battery is sampled once, by the monitor, and the screens read it
         through the state: a page that collected its own would be a second
         reader and a second clock.  The process-level readers -- the rules'
-        notifier and the voice's endless count -- are not pages and do not sample
-        either; they listen to the one flow."""
+        notifier, the voice's endless count and the foreground service's ongoing
+        notification -- are not pages and do not sample either; they listen to
+        the one flow."""
         self.assertHas(self.state(), "Monitor.state")
         self.assertHas(self.state(), "Monitor.buffer")
         self.assertHas(self.state(), "Monitor.intervalMs")
         for name in SOURCES:
             if name in ("Battery.kt", "AppState.kt", "Notifications.kt",
-                        "Voice.kt"):
+                        "Voice.kt", "MonitorService.kt"):
                 continue
             for reading in ("Monitor.state", "Monitor.buffer",
                             "Monitor.intervalMs"):
@@ -1601,13 +1606,18 @@ class RulesTest(SourceTest):
         self.assertHas(kotlin("AppState.kt"), "Monitor.recording = on")
         self.assertHas(kotlin("MainActivity.kt"), "Monitor.recording = prefs.record")
 
-    def test_the_rules_run_with_the_process_not_with_a_page(self):
-        """A notification has to arrive with the screen off, so nothing about
-        the rules hangs off a composable."""
+    def test_the_rules_run_in_a_service_not_in_a_page(self):
+        """A notification has to arrive with the screen off.  Android freezes
+        ordinary background processes, so the rules live in a foreground
+        service -- not in the activity, and never in a composable."""
+        service = kotlin("MonitorService.kt")
+        self.assertHas(service, "startNotifier(this)")
+        self.assertHas(service, "Voice.start(this)")
+        self.assertHas(service, "armRules(prefs)")
         main = kotlin("MainActivity.kt")
-        self.assertHas(main, "startNotifier(this)")
-        self.assertHas(main, "Voice.start(this)")
-        self.assertHas(main, "Voice.shutdown()")
+        self.assertHas(main, "MonitorService.start(context)")
+        # the activity leaving must not take the voice engine with it
+        self.assertLacks(main, "Voice.shutdown()")
         self.assertLacks(kotlin("Pages.kt"), "startNotifier(")
         self.assertHas(self.notifier(), "Monitor.state.collect")
         # the one flow, read twice: the chart's history and these rules
@@ -1704,6 +1714,56 @@ class AboutTest(SourceTest):
         self.assertHas(settings, "fun openReleases(context: Context): Boolean")
 
 
+class BackgroundTest(SourceTest):
+    """通知开关 on has to outlive the screen: a foreground service, and a boot."""
+
+    def manifest(self):
+        return read(MAIN, "AndroidManifest.xml")
+
+    def test_the_service_is_declared_as_a_foreground_monitor(self):
+        manifest = self.manifest()
+        self.assertHas(manifest, 'android:name=".MonitorService"')
+        self.assertHas(manifest, 'android:foregroundServiceType="specialUse"')
+        self.assertHas(manifest, "PROPERTY_SPECIAL_USE_FGS_SUBTYPE")
+        for perm in ("FOREGROUND_SERVICE", "FOREGROUND_SERVICE_SPECIAL_USE",
+                     "RECEIVE_BOOT_COMPLETED"):
+            with self.subTest(perm=perm):
+                self.assertHas(manifest, f"android.permission.{perm}")
+
+    def test_it_arms_from_prefs_and_keeps_the_process(self):
+        """The activity may be gone when Android recreates the process, so the
+        service rebuilds the rules from Prefs and arms them silently."""
+        service = kotlin("MonitorService.kt")
+        for part in ("startForeground(", "START_STICKY", "armRules(prefs)",
+                     "startNotifier(this)", "Voice.start(this)",
+                     "Monitor.start(this", "NotifyRules.arm(rules)",
+                     "stopForeground(STOP_FOREGROUND_REMOVE)"):
+            with self.subTest(part=part):
+                self.assertHas(service, part)
+
+    def test_the_ongoing_line_is_low_and_silent(self):
+        notifier = kotlin("Notifications.kt")
+        self.assertHas(notifier, 'MONITOR_CHANNEL = "chargecap-monitor"')
+        channel = re.search(r"val monitor = NotificationChannel\(.*?\n    \}",
+                            notifier, re.S).group(0)
+        self.assertHas(channel, "IMPORTANCE_LOW")
+        self.assertHas(channel, "setSound(null, null)")
+        self.assertHas(channel, "enableVibration(false)")
+
+    def test_the_switch_starts_and_stops_it(self):
+        main = kotlin("MainActivity.kt")
+        self.assertHas(main, "LaunchedEffect(state.notify)")
+        self.assertHas(main, "if (state.notify) MonitorService.start(context)")
+        self.assertHas(main, "else MonitorService.stop(context)")
+
+    def test_a_reboot_brings_it_back_when_the_switch_was_on(self):
+        boot = kotlin("BootReceiver.kt")
+        self.assertHas(boot, "Intent.ACTION_BOOT_COMPLETED")
+        self.assertHas(boot, "Intent.ACTION_MY_PACKAGE_REPLACED")
+        self.assertHas(boot, "if (Prefs(context).notify)")
+        self.assertHas(boot, "MonitorService.start(context)")
+
+
 class ProjectTest(SourceTest):
     """The packaging contract of the Android app, the way the GTK app has one:
     ids, permissions, icons and the Android versions it supports."""
@@ -1726,14 +1786,17 @@ class ProjectTest(SourceTest):
                        "manifest")
         self.assertHas(self.manifest, 'android:exported="true"', "manifest")
 
-    def test_only_the_two_permissions_it_needs_are_asked_for(self):
-        """WAKE_LOCK for 禁止休眠, and 通知横幅 -- install-time up to Android 12,
-        a runtime question from 13."""
+    def test_only_the_permissions_it_needs_are_asked_for(self):
+        """WAKE_LOCK for 禁止休眠, 通知横幅, and the foreground service / boot
+        pair that lets the rules keep reading with the app off screen."""
         self.assertEqual(
             re.findall(r'<uses-permission android:name="([^"]+)"',
                        self.manifest),
             ["android.permission.WAKE_LOCK",
-             "android.permission.POST_NOTIFICATIONS"])
+             "android.permission.POST_NOTIFICATIONS",
+             "android.permission.FOREGROUND_SERVICE",
+             "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+             "android.permission.RECEIVE_BOOT_COMPLETED"])
 
     def test_the_vendor_packages_are_named_for_android_11(self):
         """From API 30 another package is invisible unless it is named, and an

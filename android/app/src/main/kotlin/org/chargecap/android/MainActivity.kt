@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -95,9 +97,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         // the wake lock dies with the process anyway; releasing it here keeps
-        // the switch from outliving the app that owns it
+        // the switch from outliving the app that owns it.  The voice engine is
+        // left alone: the monitor service may still have a reminder to say.
         if (isFinishing) inhibitor.release()
-        Voice.shutdown()
         super.onDestroy()
     }
 }
@@ -107,6 +109,16 @@ class MainActivity : ComponentActivity() {
 fun ChargecapApp(prefs: Prefs, inhibitor: SleepInhibitor) {
     // everything the pages read and write; built once, for the life of the UI
     val state = remember { AppState(prefs, inhibitor) }
+
+    // 通知开关 on: keep the rules alive with the screen off.  A foreground
+    // service is the only thing Android leaves running for that; the small
+    // ongoing notification is its price, and vendor autostart alone does not
+    // buy it.  Off stops the service and its notification too.
+    val context = LocalContext.current
+    LaunchedEffect(state.notify) {
+        if (state.notify) MonitorService.start(context)
+        else MonitorService.stop(context)
+    }
 
     // the phone's own back: 设置 to the page that opened it, 高级 to 通知 --
     // and from 通知 it leaves the app, as it should
