@@ -15,6 +15,7 @@ The GUI cannot be imported here (it needs GTK and has no .py suffix), so these
 tests read its source: the constants, the translation tables and the call
 sites.  That keeps the whole suite runnable in CI with nothing but python3.
 """
+import ast
 import os
 import re
 import unittest
@@ -464,6 +465,49 @@ class SamplingTest(unittest.TestCase):
         # reason to wake the screen up five times a second
         self.assertIn("if paint and self.record:", self.src)
         self.assertIn("self.chart.queue_draw()", self.src)
+
+
+class ChoiceListTest(unittest.TestCase):
+    """The list behind every chip: the tick follows the value that was picked.
+
+    A popover is built once and reopened after each choice, so a tick written
+    only while it was built went stale: 采样间隔's chip moved to the new
+    interval while its list still ticked the old one.  The shared builder has
+    to move the tick itself, or every caller would need a copy of the same
+    fix.
+    """
+
+    def setUp(self):
+        self.src = gui_source()
+        self.pop = self._body("choice_popover")
+
+    def _body(self, name):
+        """One function's source, nested defs included."""
+        for node in ast.walk(gui_tree()):
+            if isinstance(node, ast.FunctionDef) and node.name == name:
+                return ast.get_source_segment(self.src, node)
+        raise AssertionError(f"{name} is not in the GUI")
+
+    def test_the_tick_moves_with_the_pick(self):
+        # the row labels are kept, so an already built list can be rewritten
+        self.assertIn("rows.append((value, text, label))", self.pop)
+        self.assertIn("def tick(chosen):", self.pop)
+        self.assertIn(r'"\u2713 " if value == chosen else "   "', self.pop)
+        # a tap goes through the shared handler, which ticks and then tells
+        # the caller -- not straight to the caller as it used to
+        self.assertIn('btn.connect("clicked", picked, value)', self.pop)
+        self.assertIn("tick(value)", self.pop)
+        self.assertIn("on_pick(btn, value)", self.pop)
+        # and the first open ticks the value the list was built with
+        self.assertIn("tick(current)", self.pop)
+
+    def test_every_choice_chip_still_uses_the_shared_list(self):
+        """The fix lives in the builder: a caller with its own popover would
+        silently lose it."""
+        for name in ("chip_button", "_sample_button", "_window_button",
+                     "_background_button", "_language_button"):
+            with self.subTest(name=name):
+                self.assertIn("choice_popover(", self._body(name))
 
 
 class NotifyTableTest(unittest.TestCase):

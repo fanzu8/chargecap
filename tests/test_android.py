@@ -436,7 +436,10 @@ class ChartTest(SourceTest):
         self.assertHas(gtk, "popover button.choice {")
         self.assertHas(gtk, "min-height: 28px; min-width: 0px; padding: 0px 6px; margin: 0px;")
         self.assertHas(gtk, "min-height: 0px; padding: 0px; font-weight: 400;")
-        self.assertHas(gtk, 'label=("\\u2713 " if value == current else "   ") + label')
+        # the tick is moved when a row is picked, not baked in at build time:
+        # the list is reopened after every choice, so the old tick went stale
+        self.assertHas(gtk, '("\\u2713 " if value == chosen else "   ") + text')
+        self.assertHas(gtk, "tick(value)")
         # 限制充电 / 禁止休眠 are plain bold text: the chip behind them, which
         # read as a shadow around the words, is gone.  电源 keeps its own
         self.assertLacks(panel, "KeyChip(title, null, s.heading)")

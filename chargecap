@@ -611,15 +611,37 @@ def choice_popover(items, current, on_pick, max_height=420):
     recording interval's list already had.
     """
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-    for label, value in items:
+    rows = []
+
+    def tick(chosen):
+        """Put the tick on the chosen row -- and nowhere else.
+
+        The same popover is built once and reopened every time the chip is
+        tapped, so a tick written only while it was built kept pointing at the
+        value the app started with: 采样间隔's label moved to the new interval
+        while its list still ticked the old one.  Rewriting the row labels here
+        keeps it true for every list that uses this popover.
+        """
+        for value, text, label in rows:
+            label.set_text(("\u2713 " if value == chosen else "   ") + text)
+
+    def picked(btn, value):
+        # move the tick before handing the pick on: some handlers pop the
+        # popover down at once, and the next open must already be right
+        tick(value)
+        on_pick(btn, value)
+
+    for text, value in items:
         btn = Gtk.Button()
         btn.add_css_class("flat")
         btn.add_css_class("choice")
-        text = Gtk.Label(label=("\u2713 " if value == current else "   ") + label)
-        text.set_xalign(0.0)
-        btn.set_child(text)
-        btn.connect("clicked", on_pick, value)
+        label = Gtk.Label()
+        label.set_xalign(0.0)
+        btn.set_child(label)
+        rows.append((value, text, label))
+        btn.connect("clicked", picked, value)
         box.append(btn)
+    tick(current)
     pop = Gtk.Popover()
     if max_height:
         scroller = Gtk.ScrolledWindow()
