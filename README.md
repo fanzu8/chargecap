@@ -63,11 +63,7 @@ there; the nodes are found by the attributes they expose — see `TODO.md`.
 
 - **通知**: many thresholds of your own, a reminder when each is crossed --
   banner or voice, and the voice takes a repeat count.  It doubles as an
-  elderly phone that speaks the charge state out loud.  On Android, 通知开关
-  also starts a low-priority foreground service, with a small ongoing
-  后台监控 line in the shade: that is what keeps the readings coming while the
-  app is off screen.  Autostart and battery whitelists alone do not do it --
-  Android freezes ordinary background processes.
+  elderly phone that speaks the charge state out loud.
 - **Hysteresis**: charging stops at the **upper** limit and resumes at the
   **lower** one; in between nothing changes.  Defaults 50 / 45 (%).
 - **Master switch**: with it off, charging is left completely alone (a non-zero

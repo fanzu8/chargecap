@@ -82,8 +82,8 @@ ANDROID_ONLY = {
     "充电提醒",
     "电量、温度、电压、电流或功率越过你设的线时提醒",
     # the ongoing notification of the foreground monitor
-    "正在后台监控", "后台监控",
-    "通知开关打开时保持后台读取，越线才能提醒",
+    "由于通知需要，后台运行中", "后台运行",
+    "通知开关打开时保持后台运行",
 }
 
 # the shared vocabulary: rename a label on one side and the other has to
@@ -835,7 +835,7 @@ class NotifyPageTest(SourceTest):
         self.assertHas(self.state(), "Monitor.intervalMs")
         for name in SOURCES:
             if name in ("Battery.kt", "AppState.kt", "Notifications.kt",
-                        "Voice.kt", "MonitorService.kt"):
+                        "Voice.kt"):
                 continue
             for reading in ("Monitor.state", "Monitor.buffer",
                             "Monitor.intervalMs"):
@@ -1740,6 +1740,11 @@ class BackgroundTest(SourceTest):
                      "stopForeground(STOP_FOREGROUND_REMOVE)"):
             with self.subTest(part=part):
                 self.assertHas(service, part)
+        # the shade says why it is there, and nothing else: no readings, no
+        # ticker -- the sampling belongs to the rules, not to the notification
+        self.assertHas(service, 'tr("由于通知需要，后台运行中")')
+        self.assertLacks(service, "Monitor.state.collect")
+        self.assertLacks(service, "ongoingText")
 
     def test_the_ongoing_line_is_low_and_silent(self):
         notifier = kotlin("Notifications.kt")

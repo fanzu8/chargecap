@@ -12,7 +12,6 @@
 package org.chargecap.android
 
 import android.app.Notification
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -20,15 +19,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 
 /**
  * 通知开关 on: the process that reads the battery while the app is off screen.
@@ -47,9 +39,6 @@ import kotlinx.coroutines.launch
  * is not a crossing).
  */
 class MonitorService : Service() {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private var watching: Job? = null
-
     override fun onCreate() {
         super.onCreate()
         val prefs = Prefs(this)
@@ -64,31 +53,12 @@ class MonitorService : Service() {
         armRules(prefs)
         startNotifier(this)
 
-        val first = notification(Monitor.state.value)
+        val note = notification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(ONGOING_ID, first,
+            startForeground(ONGOING_ID, note,
                             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
-            startForeground(ONGOING_ID, first)
-        }
-
-        // keep the notification honest, but do not turn it into a ticker: a
-        // line of text is enough to show the service is alive, and every post
-        // is a wake-up the system counts.  A minute between changes is plenty;
-        // the readings are shown to say "still here", not to be stared at.
-        watching = scope.launch {
-            var text = ""
-            var at = 0L
-            Monitor.state.collect { sample ->
-                val now = SystemClock.elapsedRealtime()
-                val next = ongoingText(sample)
-                if (next != text && (at == 0L || now - at >= 60_000)) {
-                    at = now
-                    text = next
-                    getSystemService(NotificationManager::class.java)
-                        ?.notify(ONGOING_ID, notification(sample))
-                }
-            }
+            startForeground(ONGOING_ID, note)
         }
     }
 
@@ -102,8 +72,6 @@ class MonitorService : Service() {
     }
 
     override fun onDestroy() {
-        watching?.cancel()
-        scope.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
@@ -119,14 +87,12 @@ class MonitorService : Service() {
         NotifyRules.arm(rules)
     }
 
-    private fun ongoingText(s: Snapshot): String {
-        val capacity = s.capacity?.let { "$it%" } ?: "—"
-        val temp = s.tempC?.let { String.format("%.1f °C", it) } ?: "—"
-        val state = if (s.charging) tr("充电中") else tr("未充电")
-        return "$capacity · $temp · $state"
-    }
-
-    private fun notification(s: Snapshot): Notification {
+    /**
+     * The one line Android requires of a foreground service, and nothing else:
+     * no readings, no ticker.  The service still samples for the rules; what
+     * it says in the shade is only why it is there.
+     */
+    private fun notification(): Notification {
         val open = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java)
@@ -135,8 +101,7 @@ class MonitorService : Service() {
         )
         return NotificationCompat.Builder(this, MONITOR_CHANNEL)
             .setSmallIcon(R.drawable.ic_notify)
-            .setContentTitle(tr("正在后台监控"))
-            .setContentText(ongoingText(s))
+            .setContentTitle(tr("由于通知需要，后台运行中"))
             .setOngoing(true)
             .setSilent(true)
             .setShowWhen(false)

@@ -72,10 +72,10 @@ fun createNotificationChannel(context: Context) {
     // statement that monitoring is on, not a message to read
     val monitor = NotificationChannel(
         MONITOR_CHANNEL,
-        tr("后台监控"),
+        tr("后台运行"),
         NotificationManager.IMPORTANCE_LOW,
     ).apply {
-        description = tr("通知开关打开时保持后台读取，越线才能提醒")
+        description = tr("通知开关打开时保持后台运行")
         setShowBadge(false)
         setSound(null, null)
         enableVibration(false)

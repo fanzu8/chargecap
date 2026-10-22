@@ -131,28 +131,6 @@ install up to Android 12, asked for when 通知开关 goes on from 13; and
 `RECEIVE_BOOT_COMPLETED` for the background monitor.  The `<queries>` also names
 the vendor packages an autostart Intent has to reach.
 
-## The background
-
-Android freezes ordinary background processes, and the vendor's 自启动 and
-battery whitelist do not change that: a rule that needs a reading every second
-will stop the moment the app leaves the screen.  WeChat and friends look alive
-because they use the system push channels (Huawei / Xiaomi / OPPO / vivo push,
-or FCM), which wake them when a message arrives -- not because of a switch in
-settings.
-
-chargecap's readings are not pushed from anywhere; they have to be sampled.  So
-通知开关 starts `MonitorService`, a foreground service with a low, silent,
-ongoing 后台监控 notification (the price Android charges for staying awake).
-It owns the sampler, the rules and the voice, is `START_STICKY`, and
-`BootReceiver` starts it again at boot or after an update when the switch was
-left on.  The notification updates at most once a minute -- it says "still
-here", it is not a ticker.  Turning 通知开关 off stops the service and its
-notification.  AGP 9.0.1 (which compiles Kotlin
-itself), Kotlin 2.3.20, Compose BOM 2026.03.01.  `tests/test_android.py` holds it
-to the GTK app -- metric table, windows, type scale, tick formats, colours and
-every translated string -- and `cd .. && python3 -m unittest` needs no phone and
-no SDK.
-
 ## Releases
 
 CI builds on every change to `android/`, and on a `v*` tag attaches the result to

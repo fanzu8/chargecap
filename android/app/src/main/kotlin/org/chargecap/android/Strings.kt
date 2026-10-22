@@ -175,10 +175,11 @@ private val EN = mapOf(
     "隐私" to "Privacy",
     "不联网、不收集任何数据" to "No network, no data collected",
     // the ongoing notification of the background monitor
-    "正在后台监控" to "Monitoring in the background",
-    "后台监控" to "Background monitoring",
-    "通知开关打开时保持后台读取，越线才能提醒" to
-        "Keeps reading in the background while notifications are on, so a crossing is noticed",
+    "由于通知需要，后台运行中" to
+        "Running in the background so notifications can arrive",
+    "后台运行" to "Background running",
+    "通知开关打开时保持后台运行" to
+        "Keeps running in the background while notifications are on",
     "通知横幅与声音" to "Banners and sound",
     "在通知设置里放开横幅和声音" to "Turn the banner and the sound on in the notification settings",
     "打开" to "Open",
