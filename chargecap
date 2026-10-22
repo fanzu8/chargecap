@@ -1823,8 +1823,13 @@ class Window(Adw.ApplicationWindow):
 
     # ---- sampling ----
     def _tick_ms(self):
-        """How often to wake up: the interval, or the panel's own 500 ms."""
-        return max(10, min(SAMPLE_MS, SAMPLE_MS_CHOICE))
+        """The panel's own clock: 500 ms, whatever the chart is set to.
+
+        The chart's interval decides what is stored, not how often the phone is
+        read; a 0.01 s setting must not turn the panel into a 100 Hz reader,
+        and a 20 s one must not freeze the live numbers.
+        """
+        return SAMPLE_MS
 
     def _sample_due(self, now):
         """True when the chart's clock says a sample is due."""

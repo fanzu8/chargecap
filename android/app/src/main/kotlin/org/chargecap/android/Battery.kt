@@ -274,6 +274,9 @@ object Monitor {
     /** how often the panel reads, whatever the chart is set to */
     const val SAMPLE_MS = 500L
 
+    /** how often the rules alone read: the daemon's 3 s on postmarketOS */
+    const val RULES_MS = 3000L
+
     /** samples kept for the longest window (48 h at 2 Hz), plus a little slack */
     val MAX_SAMPLES = (48 * 3600 * 1000L / SAMPLE_MS + 16).toInt()
 
@@ -306,17 +309,31 @@ object Monitor {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var job: Job? = null
 
+    /** How often the reader wakes: 500 ms for a page, 3 s for the rules. */
+    @Volatile
+    private var readMs: Long = SAMPLE_MS
+
+    /**
+     * One reader at the pace the caller needs.
+     *
+     * [intervalMs] is the chart's own clock and never changes how often the
+     * battery is read: a 0.01 s setting cannot make a phone read 100 times a
+     * second, and a 20 s setting must not freeze the live numbers.  When only
+     * the notification service is looking, [RULES_MS] is the pace; when
+     * nothing is looking, [stop] turns the reader off altogether.
+     */
     fun start(context: Context, everyMs: Long = SAMPLE_MS) {
-        if (job?.isActive == true) return
-        intervalMs = everyMs
+        val ms = everyMs.coerceAtLeast(100L)
+        if (job?.isActive == true && readMs == ms) return
+        job?.cancel()
+        readMs = ms
         val reader = BatteryReader(context)
         job = scope.launch {
-            // signed current extremes, reset every time the app starts
+            // signed current extremes, reset every time the reader restarts
             var minMA: Double? = null
             var maxMA: Double? = null
             var seq = 0L
             var storedAt = 0L
-            var publishedAt = 0L
             while (isActive) {
                 val now = SystemClock.elapsedRealtime()
                 // the sleep record rides on the same pass: the wall clock
@@ -333,9 +350,9 @@ object Monitor {
                     currentMinMA = minMA,
                     currentMaxMA = maxMA,
                 )
-                // the chart's clock: one sample per interval, however often the
-                // panel reads
-                val due = intervalMs <= SAMPLE_MS || now - storedAt >= intervalMs
+                // the chart's clock: one sample per interval, never faster
+                // than the reader itself
+                val due = intervalMs <= readMs || now - storedAt >= intervalMs
                 if (due && recording) {
                     storedAt = now
                     buffer.add(
@@ -352,14 +369,40 @@ object Monitor {
                         ),
                     )
                 }
-                // the panel's clock: never faster than 500 ms, so a 20 s
-                // recording interval does not freeze the live numbers
-                if (now - publishedAt >= SAMPLE_MS) {
-                    publishedAt = now
-                    _state.value = snapshot
-                }
-                delay(minOf(SAMPLE_MS, intervalMs).coerceAtLeast(10L))
+                _state.value = snapshot
+                delay(readMs)
             }
+        }
+    }
+
+    /** Nothing needs a reading: stop the reader rather than idle with it. */
+    fun stop() {
+        job?.cancel()
+        job = null
+    }
+}
+
+/**
+ * Which of the three readers is on.
+ *
+ * 实时采集 with the page in front: 500 ms, for the numbers and the chart.
+ * The notification service alone: 3 s, for the rules.  Neither: nothing at
+ * all -- no timer, no battery read, no wake-up.
+ */
+object Sampling {
+    /** Whether a page is on screen; the activity sets it in onStart/onStop. */
+    @Volatile
+    var visible: Boolean = false
+
+    fun apply(context: Context, prefs: Prefs) {
+        Monitor.intervalMs = prefs.sampleMs.toLong()
+        val live = prefs.live && visible
+        // the chart rides on the live reader; the 3 s reader has no page
+        Monitor.recording = live && prefs.record
+        when {
+            live -> Monitor.start(context, Monitor.SAMPLE_MS)
+            prefs.notify -> Monitor.start(context, Monitor.RULES_MS)
+            else -> Monitor.stop()
         }
     }
 }

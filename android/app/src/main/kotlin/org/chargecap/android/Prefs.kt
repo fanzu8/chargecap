@@ -20,8 +20,12 @@ import android.os.PowerManager
 // window, and the language pushed by hand.
 
 class Prefs(context: Context) {
+    /** The application context, for the few callers that need to start or
+     *  stop the reader without holding one of their own. */
+    val context: Context = context.applicationContext
+
     private val store =
-        context.applicationContext.getSharedPreferences("chargecap", Context.MODE_PRIVATE)
+        this.context.getSharedPreferences("chargecap", Context.MODE_PRIVATE)
 
     var lang: Lang
         get() = Lang.of(store.getString("lang", null))

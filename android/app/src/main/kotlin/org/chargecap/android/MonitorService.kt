@@ -58,8 +58,9 @@ class MonitorService : Service() {
         // call twice, and this is the one that survives the activity
         Sleeps.start(prefs)
         Voice.start(this)
-        Monitor.recording = prefs.record
-        Monitor.start(this, prefs.sampleMs.toLong())
+        // no page in front unless the activity says otherwise: this is the
+        // 3 s reader the rules need, not the 500 ms one a table needs
+        Sampling.apply(this, prefs)
         armRules(prefs)
         startNotifier(this)
 
@@ -84,6 +85,9 @@ class MonitorService : Service() {
 
     override fun onDestroy() {
         prefs.unlisten(changed)
+        // the switch may have been turned off while the page was gone: stop
+        // the reader if nothing else needs it
+        Sampling.apply(this, prefs)
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }

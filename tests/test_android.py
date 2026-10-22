@@ -455,18 +455,16 @@ class ChartTest(SourceTest):
         self.assertIn('("15s", 15), ("30s", 30),', read(ROOT, "chargecap"))
 
     def test_the_panel_and_the_chart_run_on_two_clocks(self):
-        """The panel is a live readout and keeps its 500 ms whatever the chart
-        records at; a 20 s interval must not freeze the numbers."""
+        """The panel reads at 500 ms and the rules at 3 s; the chart's interval
+        only decides what is stored -- a 0.01 s setting must not turn the phone
+        into a 100 Hz reader, and a 20 s one must not freeze the numbers."""
         battery = kotlin("Battery.kt")
         self.assertHas(battery, "var intervalMs: Long = SAMPLE_MS")
-        self.assertHas(battery, "val due = intervalMs <= SAMPLE_MS || now - storedAt >= intervalMs")
-        self.assertHas(battery, "if (now - publishedAt >= SAMPLE_MS)")
-        self.assertHas(battery, "delay(minOf(SAMPLE_MS, intervalMs)")
-        # the interval is the monitor's own clock, set when it starts and again
-        # only when the user moves the chip (through the state)
-        self.assertHas(battery, "fun start(context: Context, everyMs: Long = SAMPLE_MS)")
-        self.assertHas(battery, "intervalMs = everyMs")
-        self.assertHas(kotlin("AppState.kt"), "Monitor.intervalMs = ms.toLong()")
+        self.assertHas(battery, "val due = intervalMs <= readMs || now - storedAt >= intervalMs")
+        self.assertHas(battery, "delay(readMs)")
+        self.assertHas(battery, "const val RULES_MS = 3000L")
+        # the chart's clock is set from the state, not from the reader
+        self.assertHas(battery, "Monitor.intervalMs = prefs.sampleMs.toLong()")
         self.assertHas(kotlin("Prefs.kt"), 'store.getInt("sample_ms", DEFAULT_SAMPLE_MS)')
 
     def test_sample_rate_and_history_match_the_gtk_app(self):
@@ -832,7 +830,8 @@ class NotifyPageTest(SourceTest):
         the one flow."""
         self.assertHas(self.state(), "Monitor.state")
         self.assertHas(self.state(), "Monitor.buffer")
-        self.assertHas(self.state(), "Monitor.intervalMs")
+        self.assertHas(kotlin("Battery.kt"),
+                       "Monitor.intervalMs = prefs.sampleMs.toLong()")
         for name in SOURCES:
             if name in ("Battery.kt", "AppState.kt", "Notifications.kt",
                         "Voice.kt"):
@@ -845,9 +844,11 @@ class NotifyPageTest(SourceTest):
         wire = re.search(r"fun startNotifier\(.*?\n\}",
                          kotlin("Notifications.kt"), re.S).group(0)
         self.assertHas(wire, "Monitor.state.collect")
-        # the sampling starts once, with the process, not with a page
+        # the reader is started by the controller, when a page or the service
+        # needs it -- never by a page on its own
+        self.assertHas(kotlin("Battery.kt"), "object Sampling")
         self.assertHas(kotlin("MainActivity.kt"),
-                       "Monitor.start(applicationContext, prefs.sampleMs.toLong())")
+                       "Sampling.apply(applicationContext, prefs)")
 
     def test_a_new_notification_is_one_line_in_the_table(self):
         """NOTIFICATIONS says what a notification is -- key, words, unit, range
@@ -1603,8 +1604,9 @@ class RulesTest(SourceTest):
         # the switch is stored, and read once before the sampler starts
         self.assertHas(kotlin("Prefs.kt"), 'store.getBoolean("record", false)')
         self.assertHas(kotlin("AppState.kt"), "fun setRecording(on: Boolean) {")
-        self.assertHas(kotlin("AppState.kt"), "Monitor.recording = on")
-        self.assertHas(kotlin("MainActivity.kt"), "Monitor.recording = prefs.record")
+        self.assertHas(kotlin("AppState.kt"), "Sampling.apply(prefs.context, prefs)")
+        self.assertHas(kotlin("MainActivity.kt"),
+                       "Sampling.apply(applicationContext, prefs)")
 
     def test_the_rules_run_in_a_service_not_in_a_page(self):
         """A notification has to arrive with the screen off.  Android freezes
@@ -1714,6 +1716,39 @@ class AboutTest(SourceTest):
         self.assertHas(settings, "fun openReleases(context: Context): Boolean")
 
 
+class SamplingTest(SourceTest):
+    """Three readers, three reasons: page 500 ms, rules 3 s, neither nothing."""
+
+    def test_the_modes(self):
+        battery = kotlin("Battery.kt")
+        self.assertHas(battery, "const val RULES_MS = 3000L")
+        self.assertHas(battery, "object Sampling")
+        self.assertHas(battery, "@Volatile\n    var visible: Boolean = false")
+        self.assertHas(battery, "val live = prefs.live && visible")
+        self.assertHas(battery, "Monitor.recording = live && prefs.record")
+        self.assertHas(battery, "live -> Monitor.start(context, Monitor.SAMPLE_MS)")
+        self.assertHas(battery, "prefs.notify -> Monitor.start(context, Monitor.RULES_MS)")
+        self.assertHas(battery, "else -> Monitor.stop()")
+
+    def test_a_page_says_when_it_is_visible(self):
+        main = kotlin("MainActivity.kt")
+        start = main[main.index("override fun onStart()"):]
+        stop = main[main.index("override fun onStop()"):]
+        self.assertHas(start, "Sampling.visible = true")
+        self.assertHas(start, "Sampling.apply(applicationContext, prefs)")
+        self.assertHas(stop, "Sampling.visible = false")
+        self.assertHas(stop, "Sampling.apply(applicationContext, prefs)")
+
+    def test_the_reader_stops_when_nobody_needs_it(self):
+        battery = kotlin("Battery.kt")
+        self.assertHas(battery, "fun stop() {")
+        self.assertHas(battery, "job?.cancel()")
+        # ... and a restart at a different pace is a new loop, so a page
+        # opening does not wait for the rules' three seconds
+        self.assertHas(battery, "if (job?.isActive == true && readMs == ms) return")
+        self.assertHas(battery, "job?.cancel()\n        readMs = ms")
+
+
 class BackgroundTest(SourceTest):
     """通知开关 on has to outlive the screen: a foreground service, and a boot."""
 
@@ -1736,7 +1771,7 @@ class BackgroundTest(SourceTest):
         service = kotlin("MonitorService.kt")
         for part in ("startForeground(", "START_STICKY", "armRules(prefs)",
                      "startNotifier(this)", "Voice.start(this)",
-                     "Monitor.start(this", "NotifyRules.arm(rules)",
+                     "Sampling.apply(this, prefs)", "NotifyRules.arm(rules)",
                      "stopForeground(STOP_FOREGROUND_REMOVE)"):
             with self.subTest(part=part):
                 self.assertHas(service, part)

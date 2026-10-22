@@ -307,6 +307,9 @@ class AppState(
         notifyState = on
         prefs.notify = on
         arm()
+        // the reader's pace follows the master too: 3 s for the rules alone,
+        // 500 ms while a page is in front, nothing when neither needs it
+        Sampling.apply(prefs.context, prefs)
         // switched off is silent at once: a reminder that was still being said
         // -- and still repeating -- does not get to finish its count
         if (!on) {
@@ -473,6 +476,7 @@ class AppState(
         // no reads, no chart: 图形化 goes off with the table it draws from
         // rather than staying on over blank rows
         if (!on) setRecording(false)
+        Sampling.apply(prefs.context, prefs)
     }
 
     private var recordState by mutableStateOf(prefs.record)
@@ -484,9 +488,9 @@ class AppState(
     fun setRecording(on: Boolean) {
         recordState = on
         prefs.record = on
-        // the sampler lives in the process, not in the UI: the switch has to
-        // reach it rather than being read from the page
-        Monitor.recording = on
+        // the sampler lives in the process, not in the UI: the controller
+        // decides whether the chart records, and whether anything reads at all
+        Sampling.apply(prefs.context, prefs)
         // off is off: the curve goes with the switch, so the page has nothing
         // to draw until it is on again
         if (!on) history.clear()
@@ -502,7 +506,7 @@ class AppState(
     fun setSampleMs(ms: Int) {
         sampleState = ms
         prefs.sampleMs = ms
-        Monitor.intervalMs = ms.toLong()
+        Sampling.apply(prefs.context, prefs)
     }
 
     // ---- the live sample, as the monitor publishes it -----------------------

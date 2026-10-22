@@ -81,18 +81,25 @@ class MainActivity : ComponentActivity() {
         // the sleep record loads with the process, and a reboot clears it
         Sleeps.start(prefs)
 
-        // Sampling lives in the process rather than in the UI, so the chart
-        // keeps filling while the screen is off -- when 采集 is on: the switch
-        // is read here, once, before the sampler starts.
-        Monitor.recording = prefs.record
-        Monitor.start(applicationContext, prefs.sampleMs.toLong())
-
-        // ... and the rules ride on those same samples, with the process rather
-        // than with a page, so a notification arrives with the screen off too
+        // Sampling starts in onStart, when a page is really on screen; with
+        // only the notification service running, the controller reads at 3 s,
+        // and when neither needs it, nothing reads at all.
         Voice.start(this)
         startNotifier(this)
 
         setContent { ChargecapApp(prefs, inhibitor) }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Sampling.visible = true
+        Sampling.apply(applicationContext, prefs)
+    }
+
+    override fun onStop() {
+        Sampling.visible = false
+        Sampling.apply(applicationContext, prefs)
+        super.onStop()
     }
 
     override fun onDestroy() {
