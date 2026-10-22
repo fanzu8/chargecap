@@ -76,7 +76,7 @@ class VersionTest(unittest.TestCase):
         self.assertEqual(version.VERSION, app_version)
 
     def test_about_names_the_commit_and_the_day(self):
-        """0.0.2 (a1b2c3d4-20261021): the number, eight characters, the build
+        """0.0.3 (a1b2c3d4-20261021): the number, eight characters, the build
         day -- and only the number when neither git nor an install can say."""
         import tempfile
         import version

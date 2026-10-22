@@ -140,7 +140,7 @@ Stdlib Python, no pip dependencies; the tests need neither a phone nor GTK (nor,
 for the Android sources they also check, an Android SDK):
 
 ```sh
-python3 -m unittest        # 275 tests
+python3 -m unittest        # 277 tests
 ```
 
 They need neither a phone nor GTK (nor an Android SDK for the sources they
