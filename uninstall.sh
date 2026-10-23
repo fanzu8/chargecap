@@ -23,7 +23,13 @@ if [ -n "$USER_UID" ] && [ -d "/run/user/$USER_UID" ]; then
 	sudo -u user env XDG_RUNTIME_DIR="/run/user/$USER_UID" \
 		systemctl --user disable --now chargecap-notify.service \
 		2>/dev/null || true
+	# the panel is a user process, not a service the uninstall would stop;
+	# the transient unit may already have detached from its process
+	sudo -u user env XDG_RUNTIME_DIR="/run/user/$USER_UID" \
+		systemctl --user stop chargecap-panel.service \
+		2>/dev/null || true
 fi
+pkill -u user -f '/usr/local/bin/chargecap$' 2>/dev/null || true
 
 rm -f /etc/systemd/system/chargecap.service
 rm -f /usr/lib/systemd/user/chargecap-notify.service

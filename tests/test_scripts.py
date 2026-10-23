@@ -115,6 +115,14 @@ class InstallTest(unittest.TestCase):
         self.assertIn("rm -rf /usr/local/lib/chargecap", self.install)
         self.assertIn("rm -f /usr/local/bin/chargecap "
                       "/usr/local/bin/chargecap-notify", self.install)
+        # an upgrade also has to stop the processes still running the old
+        # binary, then put the panel back in the user's session
+        self.assertIn("pkill -u \"$USER_NAME\" -f '/usr/local/bin/chargecap$'",
+                      self.install)
+        self.assertIn("systemd-run --user --unit=chargecap-panel", self.install)
+        self.assertIn("chargecap-panel", self.uninstall)
+        self.assertIn("pkill -u user -f '/usr/local/bin/chargecap$'",
+                      self.uninstall)
 
     def test_install_enables_the_service(self):
         self.assertIn("systemctl daemon-reload", self.install)

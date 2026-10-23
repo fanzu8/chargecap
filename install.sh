@@ -33,7 +33,18 @@ if ! command -v spd-say >/dev/null 2>&1 && \
 fi
 
 # an upgrade must not leave a module from an older release behind: the library
-# directory is ours, so replace it rather than layering the new files on top
+# directory is ours, so replace it rather than layering the new files on top.
+# The old processes must go too -- a panel or notifier running the deleted
+# binary would keep the old behaviour until the next login.
+USER_UID=$(id -u "$USER_NAME" 2>/dev/null || true)
+systemctl stop chargecap.service 2>/dev/null || true
+if [ -n "$USER_UID" ] && [ -d "/run/user/$USER_UID" ]; then
+	sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="/run/user/$USER_UID" \
+		systemctl --user stop chargecap-notify.service chargecap-panel.service \
+		2>/dev/null || true
+fi
+pkill -u "$USER_NAME" -f '/usr/local/bin/chargecap$' 2>/dev/null || true
+
 rm -rf /usr/local/lib/chargecap
 rm -f /usr/local/bin/chargecap /usr/local/bin/chargecap-notify
 mkdir -p /usr/local/lib/chargecap /var/lib/chargecap
@@ -83,6 +94,24 @@ if [ -n "$USER_UID" ] && [ -d "/run/user/$USER_UID" ]; then
 else
 	sudo -u "$USER_NAME" systemctl --user enable chargecap-notify.service \
 		2>/dev/null || true
+fi
+
+# bring the panel back in the user's session, where there is one; the window
+# manager was started by the desktop, not by this root install
+if [ -n "$USER_UID" ] && [ -d "/run/user/$USER_UID" ]; then
+	sudo -u "$USER_NAME" env XDG_RUNTIME_DIR="/run/user/$USER_UID" \
+		WAYLAND_DISPLAY=wayland-0 DISPLAY=:0 \
+		XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=Phosh:GNOME \
+		GDK_BACKEND=wayland GSK_RENDERER=gl \
+		DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$USER_UID/bus" \
+		systemd-run --user --unit=chargecap-panel --collect \
+		--setenv=XDG_RUNTIME_DIR="/run/user/$USER_UID" \
+		--setenv=WAYLAND_DISPLAY=wayland-0 --setenv=DISPLAY=:0 \
+		--setenv=XDG_SESSION_TYPE=wayland \
+		--setenv=XDG_CURRENT_DESKTOP=Phosh:GNOME \
+		--setenv=GDK_BACKEND=wayland --setenv=GSK_RENDERER=gl \
+		--setenv=DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$USER_UID/bus" \
+		-- /usr/local/bin/chargecap 2>/dev/null || true
 fi
 
 echo "installed. status:"
