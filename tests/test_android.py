@@ -1806,6 +1806,11 @@ class BackgroundTest(SourceTest):
         # ticker -- the sampling belongs to the rules, not to the notification
         self.assertHas(service, 'tr("由于通知需要，后台运行中")')
         self.assertHas(service, "setColor(0xFF22C55E.toInt())")
+        # the screen off suspends the CPU, and a foreground service does not
+        # keep it awake: without this the 3 s sampler slept until the app opened
+        self.assertHas(service, "PARTIAL_WAKE_LOCK")
+        self.assertHas(service, "setReferenceCounted(false)")
+        self.assertHas(service, "wake?.release()")
         self.assertLacks(service, "Monitor.state.collect")
         self.assertLacks(service, "ongoingText")
 

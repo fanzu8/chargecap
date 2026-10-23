@@ -21,6 +21,7 @@ import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
@@ -42,6 +43,7 @@ import androidx.core.content.ContextCompat
  */
 class MonitorService : Service() {
     private lateinit var prefs: Prefs
+    private var wake: PowerManager.WakeLock? = null
 
     /** The switches and lines as the page changes them; the line follows. */
     private val changed =
@@ -72,6 +74,23 @@ class MonitorService : Service() {
             startForeground(ONGOING_ID, note)
         }
         prefs.listen(changed)
+
+        // A foreground service keeps the process, but not the CPU: with the
+        // screen off the phone suspends and the 3 s sampler stops until
+        // something wakes it.  A partial wake lock is what makes "通知开关 on"
+        // mean "the readings keep coming" -- and why it costs battery; the
+        // switch off stops the service and releases it.
+        try {
+            wake = getSystemService(PowerManager::class.java)
+                ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+                              "chargecap:notifications")
+                ?.apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+        } catch (e: Exception) {
+            wake = null
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -84,6 +103,8 @@ class MonitorService : Service() {
     }
 
     override fun onDestroy() {
+        wake?.release()
+        wake = null
         prefs.unlisten(changed)
         // the switch may have been turned off while the page was gone: stop
         // the reader if nothing else needs it
