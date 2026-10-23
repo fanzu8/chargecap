@@ -13,6 +13,7 @@ package org.chargecap.android
 
 import android.Manifest
 import android.app.NotificationChannel
+import android.graphics.BitmapFactory
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -203,6 +204,10 @@ fun post(context: Context, rule: Rule) {
     )
     val banner = NotificationCompat.Builder(context, NOTIFY_CHANNEL)
         .setSmallIcon(R.drawable.ic_notify)
+        // the shade's picture is the app's own icon; the small one stays the
+        // flat battery mask Android requires in the status bar
+        .setLargeIcon(BitmapFactory.decodeResource(
+            context.resources, R.drawable.ic_notify_large))
         .setContentTitle(tr("充电提醒"))
         .setContentText(rule.says())
         .setPriority(NotificationCompat.PRIORITY_HIGH)

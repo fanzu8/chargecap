@@ -1637,6 +1637,8 @@ class RulesTest(SourceTest):
         post = re.search(r"fun post\(.*?\n\}", self.notifier(), re.S).group(0)
         self.assertHas(post, "NotificationCompat.Builder(context, NOTIFY_CHANNEL)")
         self.assertHas(post, "R.drawable.ic_notify")
+        self.assertHas(post, "setLargeIcon(BitmapFactory.decodeResource(")
+        self.assertHas(post, "R.drawable.ic_notify_large")
         self.assertHas(post, '.setContentTitle(tr("充电提醒"))')
         self.assertHas(post, ".setContentText(rule.says())")
         self.assertHas(post, ".setPriority(NotificationCompat.PRIORITY_HIGH)")
@@ -1790,6 +1792,8 @@ class BackgroundTest(SourceTest):
         # the shade says why it is there, and nothing else: no readings, no
         # ticker -- the sampling belongs to the rules, not to the notification
         self.assertHas(service, 'tr("由于通知需要，后台运行中")')
+        self.assertHas(service, "setLargeIcon(BitmapFactory.decodeResource(")
+        self.assertHas(service, "R.drawable.ic_notify_large")
         self.assertLacks(service, "Monitor.state.collect")
         self.assertLacks(service, "ongoingText")
 
@@ -1837,6 +1841,12 @@ class BackgroundTest(SourceTest):
         self.assertHas(boot, "Intent.ACTION_MY_PACKAGE_REPLACED")
         self.assertHas(boot, "if (Prefs(context).notify)")
         self.assertHas(boot, "MonitorService.start(context)")
+
+
+class IconTest(SourceTest):
+    def test_the_large_notification_icon_is_the_apps_own(self):
+        path = os.path.join(MAIN, "res", "drawable-nodpi", "ic_notify_large.png")
+        self.assertTrue(os.path.isfile(path), path)
 
 
 class ProjectTest(SourceTest):
