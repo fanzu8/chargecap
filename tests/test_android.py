@@ -619,6 +619,9 @@ class CapabilityTest(SourceTest):
         self.assertHas(battery, "BATTERY_PROPERTY_CURRENT_NOW")
         self.assertHas(battery, "BATTERY_PROPERTY_CHARGE_COUNTER")
         self.assertHas(battery, "currentA(reported, slope)")
+        # a full idle phone reports CURRENT_NOW 0 while the counter falls
+        self.assertHas(battery,
+                       "if (reported == 0 && slope != null && abs(slope) > MIN_SLOPE_A) return slope")
         self.assertHas(battery, "abs(milli - magnitude) <= abs(micro - magnitude)")
         self.assertHas(battery, "private var perMilli: Boolean? = null")
         self.assertHas(battery, "perMilli == true")

@@ -181,6 +181,11 @@ class BatteryReader(context: Context) {
      */
     private fun currentA(reported: Int?, slope: Double?): Double? {
         if (reported == null) return slope
+        // A full, idle phone often answers CURRENT_NOW with exactly 0 while the
+        // coulomb counter is still falling.  Zero is a real reading for a phone
+        // that is doing nothing, but not when the counter shows a drain: use
+        // the counter's slope instead of printing 0 and freezing the chart.
+        if (reported == 0 && slope != null && abs(slope) > MIN_SLOPE_A) return slope
         val magnitude = slope?.let { abs(it) } ?: 0.0
         if (magnitude > MIN_SLOPE_A) {
             val micro = abs(reported) / 1_000_000.0
