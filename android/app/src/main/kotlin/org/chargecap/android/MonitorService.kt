@@ -124,6 +124,7 @@ class MonitorService : Service() {
                       else lines.joinToString(" · ")
         return NotificationCompat.Builder(this, MONITOR_CHANNEL)
             .setSmallIcon(R.drawable.ic_notify_logo)
+            .setColor(0xFF22C55E.toInt())
             .setContentTitle(tr("由于通知需要，后台运行中"))
             .setContentText(summary)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

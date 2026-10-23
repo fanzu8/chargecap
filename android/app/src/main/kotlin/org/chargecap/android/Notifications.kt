@@ -203,6 +203,9 @@ fun post(context: Context, rule: Rule) {
     )
     val banner = NotificationCompat.Builder(context, NOTIFY_CHANNEL)
         .setSmallIcon(R.drawable.ic_notify_logo)
+        // Android only lets the small icon be a mask; this is the one colour
+        // it will take, so give it chargecap's green rather than the default
+        .setColor(0xFF22C55E.toInt())
         .setContentTitle(tr("充电提醒"))
         .setContentText(rule.says())
         .setPriority(NotificationCompat.PRIORITY_HIGH)

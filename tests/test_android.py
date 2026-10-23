@@ -1637,6 +1637,7 @@ class RulesTest(SourceTest):
         post = re.search(r"fun post\(.*?\n\}", self.notifier(), re.S).group(0)
         self.assertHas(post, "NotificationCompat.Builder(context, NOTIFY_CHANNEL)")
         self.assertHas(post, "R.drawable.ic_notify_logo")
+        self.assertHas(post, "setColor(0xFF22C55E.toInt())")
         self.assertHas(post, '.setContentTitle(tr("充电提醒"))')
         self.assertHas(post, ".setContentText(rule.says())")
         self.assertHas(post, ".setPriority(NotificationCompat.PRIORITY_HIGH)")
@@ -1793,6 +1794,7 @@ class BackgroundTest(SourceTest):
         # the shade says why it is there, and nothing else: no readings, no
         # ticker -- the sampling belongs to the rules, not to the notification
         self.assertHas(service, 'tr("由于通知需要，后台运行中")')
+        self.assertHas(service, "setColor(0xFF22C55E.toInt())")
         self.assertLacks(service, "Monitor.state.collect")
         self.assertLacks(service, "ongoingText")
 
