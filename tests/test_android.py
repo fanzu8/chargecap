@@ -488,7 +488,11 @@ class ChartTest(SourceTest):
         self.assertHas(chart, "if (liveValue > hi) hi = liveValue")
         self.assertHas(chart, "val head = snapshotValue(tip, m.key)?.takeIf { !it.isNaN() }")
         self.assertLacks(chart, "coerceIn(lo, hi)")
-        self.assertHas(chart, "xs[count] = pw")
+        # a dot at the right edge, not the path's last point: joining it drew
+        # one straight line across the whole interval
+        self.assertLacks(chart, "xs[count] = pw")
+        self.assertHas(chart, "if (count == 0 && head == null) continue")
+        self.assertHas(chart, "if (count > 0) {")
         self.assertHas(chart, "drawCircle(m.color")
         # the State is read inside the draw scope, so the 500 ms publisher --
         # not the next stored sample -- invalidates the canvas

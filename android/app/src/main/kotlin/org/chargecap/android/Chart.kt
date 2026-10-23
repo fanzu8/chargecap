@@ -252,31 +252,29 @@ fun LiveChart(
                     count++
                 }
             }
-            // the live head: the reading now, at the right edge.  The chart may
-            // store every 20 s, but the eye still sees the curve move at 500 ms
-            // instead of a line that sits still for the next interval.  The
-            // range above includes this reading, so the head is never pinned
-            // to the edge of a stale range.
+            // the live head: the reading now, at the right edge.  It is a dot,
+            // not the last point of the path: joining it would stretch one
+            // straight line across the whole interval, which is exactly the
+            // line that looked frozen after changing the sampling interval.
+            // The stored curve ends at the newest stored sample; the dot is
+            // the value now, and the range above includes it.
             val (lo, hi) = ranges.getValue(m.key)
             val head = snapshotValue(tip, m.key)?.takeIf { !it.isNaN() }
-            if (head != null) {
-                xs[count] = pw
-                vs[count] = head
-                count++
-            }
-            if (count == 0) continue
+            if (count == 0 && head == null) continue
             val k = ph / (hi - lo)
 
-            // the curve
-            val path = Path()
-            for (n in 0 until count) {
-                val x = ml + xs[n]
-                val y = bottom - (vs[n] - lo) * k
-                if (n == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            // the curve, from stored samples only
+            if (count > 0) {
+                val path = Path()
+                for (n in 0 until count) {
+                    val x = ml + xs[n]
+                    val y = bottom - (vs[n] - lo) * k
+                    if (n == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                drawPath(path, m.color, style = Stroke(width = 0.6.dp.toPx()))
             }
-            drawPath(path, m.color, style = Stroke(width = 0.6.dp.toPx()))
-            // ... and a dot on the head, so a curve with only one stored point
-            // still shows that it is alive
+            // ... and the separate live head, so a curve with only one stored
+            // point still shows that it is alive
             if (head != null) {
                 drawCircle(m.color, radius = 1.6.dp.toPx(),
                            center = Offset(ml + pw, bottom - (head - lo) * k))
