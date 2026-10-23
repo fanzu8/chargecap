@@ -58,17 +58,16 @@ class Prefs(context: Context) {
         get() = store.getBoolean("inhibit_sleep", false)
         set(value) = store.edit().putBoolean("inhibit_sleep", value).apply()
 
-    /** 实时采集: whether the 高级 page reads the phone at all.  On until asked
-     *  not to -- a panel that shows nothing on a fresh install looks broken. */
+    /** 实时采集: whether the 高级 page reads the phone at all.  Off until
+     *  asked: a fresh install does not start sampling behind the user's back. */
     var live: Boolean
-        get() = store.getBoolean("live", true)
+        get() = store.getBoolean("live", false)
         set(value) = store.edit().putBoolean("live", value).apply()
 
-    /** 图形化: whether the chart keeps the readings it sees.  On until asked --
-     *  a fresh 高级 page should show the chart, not a card that looks broken;
-     *  the switch is still the opt-out. */
+    /** 图形化: whether the chart keeps the readings it sees.  Off until asked
+     *  as well; 实时采集 remains the master gate above it. */
     var record: Boolean
-        get() = store.getBoolean("record", true)
+        get() = store.getBoolean("record", false)
         set(value) = store.edit().putBoolean("record", value).apply()
 
     // ---- 通知 (the table of them is NOTIFICATIONS, in AppState.kt) ---------

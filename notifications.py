@@ -67,9 +67,19 @@ def voice_command(text, lang=None):
     """
     if not VOICE_CMD:
         return None
-    if (os.path.basename(VOICE_CMD) in ("espeak", "espeak-ng")
-            and (lang or "").startswith("zh")):
-        return [VOICE_CMD, "-v", "cmn", text]
+    zh = (lang or "").startswith("zh")
+    name = os.path.basename(VOICE_CMD)
+    if name in ("espeak", "espeak-ng"):
+        if zh:
+            # cmn+f3 is the higher female variant; the default male Mandarin
+            # is the flat, hard-to-listen-to one.  A little slower and higher
+            # takes the edge off without hiding the words.
+            return [VOICE_CMD, "-v", "cmn+f3", "-s", "145", "-p", "60",
+                    "-a", "160", text]
+        return [VOICE_CMD, text]
+    if name == "spd-say" and zh:
+        return [VOICE_CMD, "-l", "zh", "-t", "female1",
+                "-r", "-20", "-p", "-10", text]
     return [VOICE_CMD, text]
 
 

@@ -1636,7 +1636,7 @@ class RulesTest(SourceTest):
         state = kotlin("AppState.kt")
         self.assertHas(state, "fun setLive(on: Boolean) {")
         self.assertHas(state, "if (!on) setRecording(false)")
-        self.assertHas(kotlin("Prefs.kt"), 'store.getBoolean("live", true)')
+        self.assertHas(kotlin("Prefs.kt"), 'store.getBoolean("live", false)')
 
     def test_the_chart_records_only_while_asked(self):
         """图形化 sits over the chart: off until asked, and the sampler only
@@ -1661,8 +1661,8 @@ class RulesTest(SourceTest):
         self.assertHas(battery, "var recording: Boolean = false")
         self.assertHas(battery, "if (due && recording) {")
         # the switch is stored, and read once before the sampler starts.  A
-        # fresh install shows the chart; the switch remains the opt-out
-        self.assertHas(kotlin("Prefs.kt"), 'store.getBoolean("record", true)')
+        # fresh install starts with the chart off; the switch is the opt-in
+        self.assertHas(kotlin("Prefs.kt"), 'store.getBoolean("record", false)')
         self.assertHas(kotlin("AppState.kt"), "fun setRecording(on: Boolean) {")
         self.assertHas(kotlin("AppState.kt"), "Sampling.apply(prefs.context, prefs)")
         self.assertHas(kotlin("MainActivity.kt"),

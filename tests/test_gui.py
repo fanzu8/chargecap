@@ -317,10 +317,12 @@ class SizeTest(unittest.TestCase):
         self.assertIn("if paint and self.record:", self.src)
 
     def test_the_chart_records_only_while_asked(self):
-        """采集 is the chart's master switch: on by default so a fresh page
-        shows the chart, and while it is off nothing is kept.  The live table
-        above still reads -- the switch gates the record, not the look."""
-        self.assertIn('self.record = bool(load_ui().get("record", True))',
+        """采集 is the chart's master switch: off on a fresh page, and while
+        it is off nothing is kept.  The live table above reads only once
+        实时采集 is asked for too -- neither switch starts on its own."""
+        self.assertIn('self.live = bool(load_ui().get("live", False))',
+                      self.src)
+        self.assertIn('self.record = bool(load_ui().get("record", False))',
                       self.src)
         self.assertIn('if self.record and self._sample_due(now):', self.src)
         # 图形化 lives on 实时采集's row now, as a switch of its own
@@ -797,13 +799,15 @@ class NotifyTableTest(unittest.TestCase):
             notifications.VOICE_CMD = "/usr/bin/espeak-ng"
             self.assertEqual(
                 notifications.voice_command("充电完成", "zh"),
-                ["/usr/bin/espeak-ng", "-v", "cmn", "充电完成"])
+                ["/usr/bin/espeak-ng", "-v", "cmn+f3", "-s", "145",
+                 "-p", "60", "-a", "160", "充电完成"])
             self.assertEqual(
                 notifications.voice_command("Charging complete", "en"),
                 ["/usr/bin/espeak-ng", "Charging complete"])
             notifications.VOICE_CMD = "/usr/bin/spd-say"
             self.assertEqual(notifications.voice_command("充电完成", "zh"),
-                             ["/usr/bin/spd-say", "充电完成"])
+                             ["/usr/bin/spd-say", "-l", "zh", "-t", "female1",
+                              "-r", "-20", "-p", "-10", "充电完成"])
             notifications.VOICE_CMD = None
             self.assertIsNone(notifications.voice_command("充电完成", "zh"))
         finally:
@@ -1083,6 +1087,8 @@ class NotifyWiringTest(unittest.TestCase):
         # the pair is at the header's left edge, not centered in the title slot
         self.assertIn("header.pack_start(tabs)", self.src)
         self.assertNotIn("header.set_title_widget(tabs)", self.src)
+        # ... and the freed title slot stays empty, not 电电
+        self.assertIn("header.set_title_widget(Gtk.Box())", self.src)
         self.assertIn('stack.add_named(self._settings_page(), "settings")',
                       self.src)
         self.assertIn('stack.set_visible_child_name("panel")', self.src)
