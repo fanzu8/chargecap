@@ -476,6 +476,17 @@ class ChartTest(SourceTest):
                        "if (chart) minOf(Monitor.SAMPLE_MS, prefs.sampleMs.toLong())")
         self.assertHas(kotlin("Prefs.kt"), 'store.getInt("sample_ms", DEFAULT_SAMPLE_MS)')
 
+    def test_the_curve_has_a_live_head(self):
+        """The stored samples may be 20 s apart; the curve still has to move at
+        the page's 500 ms, so the live reading is drawn as its head."""
+        chart = kotlin("Chart.kt")
+        self.assertHas(chart, "tip: Snapshot,")
+        self.assertHas(chart, "val head = snapshotValue(tip, m.key)?.coerceIn(lo, hi)")
+        self.assertHas(chart, "xs[count] = pw")
+        self.assertHas(chart, "drawCircle(m.color")
+        self.assertHas(kotlin("Panel.kt"), "tip = sample,")
+        self.assertHas(kotlin("Panel.kt"), "sample = snapshot,")
+
     def test_sample_rate_and_history_match_the_gtk_app(self):
         """Half a second per sample and a 48 hour history: the Android ring
         buffer holds the same span as the GTK app's arrays."""

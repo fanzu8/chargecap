@@ -1005,6 +1005,8 @@ fun ChartRows(
     windowSecs: Int,
     onWindow: (Int) -> Unit,
     seq: Long,
+    /** the live reading: the moving head of the curve */
+    sample: Snapshot,
     /** 实时采集: off means there is nothing to chart */
     live: Boolean,
     /** 图形化: whether the sampler keeps what it reads */
@@ -1042,6 +1044,7 @@ fun ChartRows(
                 selected = selected,
                 windowSecs = windowSecs,
                 seq = seq,
+                tip = sample,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(CHART_HEIGHT),
@@ -1101,6 +1104,7 @@ fun LiveSection(state: AppState, snapshot: Snapshot) {
             windowSecs = state.windowSecs,
             onWindow = state::setWindow,
             seq = if (state.live) snapshot.seq else 0L,
+            sample = snapshot,
             live = state.live,
             recording = state.recording,
         )

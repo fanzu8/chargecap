@@ -29,6 +29,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -40,6 +41,16 @@ private const val PTS_PER_PX = 2f      // decimation cap: at most 2 drawn points
 private const val GRID_DIVS = 5        // divisions of the time axis
 private val TICKS = floatArrayOf(0f, 0.25f, 0.5f, 0.75f, 1f)   // 5 divisions
 private const val MAX_POINTS = 4096    // hard cap on the scratch buffers
+
+/** One live reading in a metric's own unit, or null when it is not published. */
+private fun snapshotValue(s: Snapshot, key: String): Float? = when (key) {
+    "voltage_v" -> s.voltageV?.toFloat()
+    "current_mA" -> s.currentA?.let { (it * 1000.0).toFloat() }
+    "power_w" -> s.powerW?.let { abs(it).toFloat() }
+    "temp_c" -> s.tempC?.toFloat()
+    "capacity" -> s.capacity?.toFloat()
+    else -> null
+}
 
 /**
  * Overlays the selected metrics on one rolling chart.
@@ -54,6 +65,8 @@ fun LiveChart(
     selected: List<String>,
     windowSecs: Int,
     seq: Long,
+    /** The live reading, drawn as the moving head of every curve. */
+    tip: Snapshot,
     modifier: Modifier = Modifier,
 ) {
     val measurer = rememberTextMeasurer()
@@ -224,11 +237,20 @@ fun LiveChart(
                     count++
                 }
             }
-            if (count == 0) continue
-
-            // the same range the columns were measured against, so a tick and
-            // the curve it belongs to can never disagree
+            // the live head: the reading now, at the right edge.  The chart may
+            // store every 20 s, but the eye still sees the curve move at 500 ms
+            // instead of a line that sits still for the next interval.  Its
+            // value is kept inside the stored range (clamped to the edge when
+            // it strays) so the axis, and therefore the plot's width, does not
+            // jitter every half second.
             val (lo, hi) = ranges.getValue(m.key)
+            val head = snapshotValue(tip, m.key)?.coerceIn(lo, hi)
+            if (head != null) {
+                xs[count] = pw
+                vs[count] = head
+                count++
+            }
+            if (count == 0) continue
             val k = ph / (hi - lo)
 
             // the curve
@@ -239,6 +261,12 @@ fun LiveChart(
                 if (n == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
             drawPath(path, m.color, style = Stroke(width = 0.6.dp.toPx()))
+            // ... and a dot on the head, so a curve with only one stored point
+            // still shows that it is alive
+            if (head != null) {
+                drawCircle(m.color, radius = 1.6.dp.toPx(),
+                           center = Offset(ml + pw, bottom - (head - lo) * k))
+            }
 
             // this curve's own Y axis, on its fixed side: name over unit, then
             // five ticks down the side of the plot
