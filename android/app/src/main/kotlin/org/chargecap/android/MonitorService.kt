@@ -110,6 +110,9 @@ class MonitorService : Service() {
         // the reader if nothing else needs it
         Sampling.apply(this, prefs)
         stopForeground(STOP_FOREGROUND_REMOVE)
+        // the service is going away: its banners belong to a process that is
+        // not here any more, and an update must not leave them in the shade
+        cancelAll(this)
         super.onDestroy()
     }
 

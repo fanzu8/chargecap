@@ -28,6 +28,9 @@ class BootReceiver : BroadcastReceiver() {
         // whether the monitor should come back
         if (intent.action != Intent.ACTION_BOOT_COMPLETED &&
             intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        // a boot/update killed the process that owned the old banners; they are
+        // not this process's state any more, so do not leave them in the shade
+        cancelAll(context)
         if (Prefs(context).notify) MonitorService.start(context)
     }
 }

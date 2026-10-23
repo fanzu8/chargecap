@@ -1263,9 +1263,12 @@ class NotifyPageTest(SourceTest):
         body = re.search(r"fun setNotify\(.*?\n    \}", self.state(), re.S).group(0)
         self.assertHas(body, "stopReminders()")
         self.assertHas(body, "Voice.stop()")
+        # and the banners already in the shade: off means nothing left behind
+        self.assertHas(body, "cancelAll(prefs.context)")
         notifier = kotlin("Notifications.kt")
         self.assertHas(notifier, "fun stopReminders() {")
         self.assertHas(notifier, "reminders.values.forEach { it.cancel() }")
+        self.assertHas(notifier, "fun cancelAll(context: Context) {")
         voice = kotlin("Voice.kt")
         self.assertHas(voice, "fun stop() {")
         # ... and the engine's queue, which the coroutine does not own: a
@@ -1836,7 +1839,8 @@ class BackgroundTest(SourceTest):
         for part in ("startForeground(", "START_STICKY", "armRules(prefs)",
                      "startNotifier(this)", "Voice.start(this)",
                      "Sampling.apply(this, prefs)", "NotifyRules.arm(rules)",
-                     "stopForeground(STOP_FOREGROUND_REMOVE)"):
+                     "stopForeground(STOP_FOREGROUND_REMOVE)",
+                     "cancelAll(this)"):
             with self.subTest(part=part):
                 self.assertHas(service, part)
         # the shade says why it is there, and nothing else: no readings, no
@@ -1893,6 +1897,8 @@ class BackgroundTest(SourceTest):
         boot = kotlin("BootReceiver.kt")
         self.assertHas(boot, "Intent.ACTION_BOOT_COMPLETED")
         self.assertHas(boot, "Intent.ACTION_MY_PACKAGE_REPLACED")
+        # the old process's banners die with it; do not carry them over
+        self.assertHas(boot, "cancelAll(context)")
         self.assertHas(boot, "if (Prefs(context).notify)")
         self.assertHas(boot, "MonitorService.start(context)")
 
@@ -1910,6 +1916,9 @@ class ProjectTest(SourceTest):
         app_id = re.search(r'applicationId = "([^"]+)"', self.gradle).group(1)
         self.assertEqual(namespace, app_id)
         self.assertHas(self.manifest, 'android:name=".MainActivity"', "manifest")
+        # uninstall/reinstall starts clean: no cloud-restored notification
+        # switches or thresholds from the old install
+        self.assertHas(self.manifest, 'android:allowBackup="false"', "manifest")
         for name in SOURCES:
             self.assertHas(kotlin(name), f"package {app_id}", name)
 

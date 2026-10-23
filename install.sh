@@ -32,6 +32,10 @@ if ! command -v spd-say >/dev/null 2>&1 && \
 	echo "!! 没有语音引擎，语音通知不可用：请先执行 apk add speech-dispatcher espeak-ng" >&2
 fi
 
+# an upgrade must not leave a module from an older release behind: the library
+# directory is ours, so replace it rather than layering the new files on top
+rm -rf /usr/local/lib/chargecap
+rm -f /usr/local/bin/chargecap /usr/local/bin/chargecap-notify
 mkdir -p /usr/local/lib/chargecap /var/lib/chargecap
 
 install -m 0755 daemon.py /usr/local/lib/chargecap/daemon.py

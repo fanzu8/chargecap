@@ -315,6 +315,7 @@ class AppState(
         if (!on) {
             stopReminders()
             Voice.stop()
+            cancelAll(prefs.context)
         }
     }
 

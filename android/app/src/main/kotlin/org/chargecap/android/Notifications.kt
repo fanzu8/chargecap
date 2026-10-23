@@ -182,6 +182,17 @@ fun stopReminders() {
 }
 
 /**
+ * Drop every banner, and the ongoing line too.  A notification is state for
+ * the process that posted it: after 通知开关 goes off, or an update replaces
+ * that process, leaving the old ones in the shade is exactly the leftover this
+ * app should not have.  Uninstall and the system's own package cleanup remove
+ * the channels and the data; this is the part the app can do while it lives.
+ */
+fun cancelAll(context: Context) {
+    context.getSystemService(NotificationManager::class.java)?.cancelAll()
+}
+
+/**
  * One banner: the app's icon, the channel 设置 points at, and the sentence the
  * rule says.  Tapping it opens the app; posting again under the same key
  * replaces the last one rather than stacking them up.

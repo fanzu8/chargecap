@@ -110,6 +110,11 @@ class InstallTest(unittest.TestCase):
                        "/etc/systemd/system/chargecap.service",
                        "/usr/share/applications/org.postmarketos.Chargecap.desktop"):
             self.assertIn(target, self.install, target)
+        # an upgrade replaces the library and binaries rather than layering new
+        # files over modules a previous release may have left there
+        self.assertIn("rm -rf /usr/local/lib/chargecap", self.install)
+        self.assertIn("rm -f /usr/local/bin/chargecap "
+                      "/usr/local/bin/chargecap-notify", self.install)
 
     def test_install_enables_the_service(self):
         self.assertIn("systemctl daemon-reload", self.install)
