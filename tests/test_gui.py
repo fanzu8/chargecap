@@ -850,6 +850,10 @@ class NotifierTest(unittest.TestCase):
     def test_the_switches_still_stop_what_is_said(self):
         self.assertIn("def silence(self):", self.src)
         self.assertIn("self.voice.stop()", self.src)
+        # terminate, then reap: a terminated TTS child that is never waited on
+        # becomes a zombie for as long as the notifier lives
+        self.assertIn("proc.wait(timeout=1)", self.src)
+        self.assertIn("proc.kill()", self.src)
         # a reminder re-reads the answers at every repeat, so a switch thrown
         # mid-count is honoured without a watcher beside it
         self.assertIn("self.reminders.stop_all()", self.src)

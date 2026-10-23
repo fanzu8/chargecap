@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
         Strings.lang = prefs.lang
-        inhibitor = SleepInhibitor(this)
+        inhibitor = SleepInhibitor.get(this)
         if (prefs.inhibitSleep) inhibitor.acquire()
 
         // 通知横幅与声音 hang off the channel, so it has to exist before the

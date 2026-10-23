@@ -107,13 +107,19 @@ class Voice:
 
     def stop(self):
         """Silent now: the switch went off, or the next thing is being said."""
-        if self._proc is not None:
-            if self._proc.poll() is None:
-                try:
-                    self._proc.terminate()
-                except Exception:
-                    pass
-            self._proc = None
+        proc, self._proc = self._proc, None
+        if proc is None:
+            return
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+            proc.wait(timeout=1)
+        except Exception:
+            try:
+                proc.kill()
+                proc.wait(timeout=1)
+            except Exception:
+                pass
 
 
 class Reminders:

@@ -605,6 +605,12 @@ class CapabilityTest(SourceTest):
         self.assertHas(manifest, "android.permission.WAKE_LOCK", "manifest")
         self.assertHas(kotlin("Prefs.kt"), "PARTIAL_WAKE_LOCK")
         self.assertHas(kotlin("Prefs.kt"), '"chargecap:sleep"')
+        # one inhibitor for the process: an Activity recreated for an unclaimed
+        # configuration change must not leave a second wake lock held
+        self.assertHas(kotlin("Prefs.kt"), "companion object")
+        self.assertHas(kotlin("Prefs.kt"), "fun get(context: Context): SleepInhibitor")
+        self.assertHas(kotlin("MainActivity.kt"), "SleepInhibitor.get(this)")
+        self.assertLacks(kotlin("MainActivity.kt"), "SleepInhibitor(this)")
         # ... and it is released with the app, never left behind
         self.assertHas(kotlin("MainActivity.kt"), "inhibitor.release()")
 

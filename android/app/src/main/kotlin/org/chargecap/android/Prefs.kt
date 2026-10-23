@@ -209,10 +209,29 @@ data class Answer(val kind: NotifyKind, val times: Int, val gap: Int) {
  * to sleep and the network stays up.  The system releases it with the process,
  * so it can never outlive the app.
  */
-class SleepInhibitor(context: Context) {
+class SleepInhibitor private constructor(context: Context) {
     private val power =
         context.applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
     private var lock: PowerManager.WakeLock? = null
+
+    companion object {
+        /**
+         * One inhibitor for the process.  An Activity is recreated for
+         * configuration changes the manifest does not claim (font size,
+         * density, locale...), and a fresh per-Activity inhibitor would leave
+         * the old wake lock held and acquire a second one with the same tag.
+         * The lock is a process-wide switch, so its owner is process-wide too.
+         */
+        @Volatile
+        private var shared: SleepInhibitor? = null
+
+        fun get(context: Context): SleepInhibitor {
+            shared?.let { return it }
+            return synchronized(SleepInhibitor::class.java) {
+                shared ?: SleepInhibitor(context.applicationContext).also { shared = it }
+            }
+        }
+    }
 
     val active: Boolean get() = lock?.isHeld == true
 
