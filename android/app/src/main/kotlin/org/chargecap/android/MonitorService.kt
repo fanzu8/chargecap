@@ -124,7 +124,7 @@ class MonitorService : Service() {
         val summary = if (lines.isEmpty()) tr("没有打开的通知项")
                       else lines.joinToString(" · ")
         return NotificationCompat.Builder(this, MONITOR_CHANNEL)
-            .setSmallIcon(R.drawable.ic_notify)
+            .setSmallIcon(R.drawable.ic_notify_logo)
             .setLargeIcon(BitmapFactory.decodeResource(
                 resources, R.drawable.ic_notify_large))
             .setContentTitle(tr("由于通知需要，后台运行中"))

@@ -1636,7 +1636,7 @@ class RulesTest(SourceTest):
     def test_the_banner_is_the_channel_the_settings_point_at(self):
         post = re.search(r"fun post\(.*?\n\}", self.notifier(), re.S).group(0)
         self.assertHas(post, "NotificationCompat.Builder(context, NOTIFY_CHANNEL)")
-        self.assertHas(post, "R.drawable.ic_notify")
+        self.assertHas(post, "R.drawable.ic_notify_logo")
         self.assertHas(post, "setLargeIcon(BitmapFactory.decodeResource(")
         self.assertHas(post, "R.drawable.ic_notify_large")
         self.assertHas(post, '.setContentTitle(tr("充电提醒"))')
@@ -1647,8 +1647,11 @@ class RulesTest(SourceTest):
         self.assertHas(post, "manager.notify(rule.n.key, 1, banner)")
         # no permission, no banner -- and nothing to crash
         self.assertHas(post, "Manifest.permission.POST_NOTIFICATIONS")
-        # the status bar tints a small icon, so it is one flat shape
-        icon = read(MAIN, "res/drawable/ic_notify.xml")
+        # the status bar tints a small icon, so it is one flat shape; the
+        # chargecap battery and play mark are line art, the launcher icon's
+        # colour is not allowed there
+        icon = read(MAIN, "res/drawable/ic_notify_logo.xml")
+        self.assertHas(icon, 'android:strokeColor="#FFFFFFFF"')
         self.assertHas(icon, 'android:fillColor="#FFFFFFFF"')
         self.assertHas(icon, "android:viewportWidth=\"24\"")
 

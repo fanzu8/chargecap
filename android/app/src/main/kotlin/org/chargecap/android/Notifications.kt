@@ -203,7 +203,7 @@ fun post(context: Context, rule: Rule) {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
     val banner = NotificationCompat.Builder(context, NOTIFY_CHANNEL)
-        .setSmallIcon(R.drawable.ic_notify)
+        .setSmallIcon(R.drawable.ic_notify_logo)
         // the shade's picture is the app's own icon; the small one stays the
         // flat battery mask Android requires in the status bar
         .setLargeIcon(BitmapFactory.decodeResource(
