@@ -481,7 +481,13 @@ class ChartTest(SourceTest):
         the page's 500 ms, so the live reading is drawn as its head."""
         chart = kotlin("Chart.kt")
         self.assertHas(chart, "tip: Snapshot,")
-        self.assertHas(chart, "val head = snapshotValue(tip, m.key)?.coerceIn(lo, hi)")
+        # the head is part of the range, not clamped into a stale one: after
+        # an interval change the old range pinned it until the next sample
+        self.assertHas(chart, "val liveValue = snapshotValue(tip, m.key)")
+        self.assertHas(chart, "if (liveValue < lo) lo = liveValue")
+        self.assertHas(chart, "if (liveValue > hi) hi = liveValue")
+        self.assertHas(chart, "val head = snapshotValue(tip, m.key)?.takeIf { !it.isNaN() }")
+        self.assertLacks(chart, "coerceIn(lo, hi)")
         self.assertHas(chart, "xs[count] = pw")
         self.assertHas(chart, "drawCircle(m.color")
         self.assertHas(kotlin("Panel.kt"), "tip = sample,")
@@ -1181,6 +1187,9 @@ class NotifyPageTest(SourceTest):
         self.assertHas(row, "val widestKind = remember(s, Strings.effective) {")
         self.assertHas(row, "NotifyKind.entries.maxOf { k ->")
         self.assertHas(row, "Box(Modifier.widthIn(min = kindColumn)) {")
+        # two choices do not need a menu most of the screen wide
+        self.assertHas(row, "width = 140.dp,")
+        self.assertLacks(row, "width = 300.dp")
         # the rest of the row is 间隔's, so the count's width never moves it
         self.assertHas(row, "Spacer(Modifier.weight(1f))")
         after = row[row.index("Spacer(Modifier.weight(1f))"):]

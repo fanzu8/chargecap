@@ -157,6 +157,15 @@ fun LiveChart(
                     if (v > hi) hi = v
                 }
             }
+            // the live reading is part of the range: clamping the head to a
+            // range made only from stored samples pinned it for a whole
+            // interval after the interval changed -- a straight line until the
+            // next sample widened the axis
+            val liveValue = snapshotValue(tip, m.key)
+            if (liveValue != null && !liveValue.isNaN()) {
+                if (liveValue < lo) lo = liveValue
+                if (liveValue > hi) hi = liveValue
+            }
             ranges[m.key] = if (lo > hi) {
                 0f to 1f
             } else {
@@ -239,12 +248,11 @@ fun LiveChart(
             }
             // the live head: the reading now, at the right edge.  The chart may
             // store every 20 s, but the eye still sees the curve move at 500 ms
-            // instead of a line that sits still for the next interval.  Its
-            // value is kept inside the stored range (clamped to the edge when
-            // it strays) so the axis, and therefore the plot's width, does not
-            // jitter every half second.
+            // instead of a line that sits still for the next interval.  The
+            // range above includes this reading, so the head is never pinned
+            // to the edge of a stale range.
             val (lo, hi) = ranges.getValue(m.key)
-            val head = snapshotValue(tip, m.key)?.coerceIn(lo, hi)
+            val head = snapshotValue(tip, m.key)?.takeIf { !it.isNaN() }
             if (head != null) {
                 xs[count] = pw
                 vs[count] = head

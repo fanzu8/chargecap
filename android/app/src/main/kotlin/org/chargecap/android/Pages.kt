@@ -440,8 +440,10 @@ private fun NotifyKindRow(
                 label = notifyKindLabel(kind),
                 items = NotifyKind.entries.map { notifyKindLabel(it) to it },
                 current = kind,
-                // two short words would otherwise open a chip-sized menu
-                width = 300.dp,
+                // two short words would otherwise open a chip-sized menu; 140
+                // dp still fits the title and both choices without spanning
+                // most of the screen
+                width = 140.dp,
                 enabled = enabled,
             ) { onAnswer(answer.copy(kind = it)) }
         }
