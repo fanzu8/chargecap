@@ -13,7 +13,6 @@ package org.chargecap.android
 
 import android.app.Notification
 import android.app.NotificationManager
-import android.graphics.BitmapFactory
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -125,8 +124,6 @@ class MonitorService : Service() {
                       else lines.joinToString(" · ")
         return NotificationCompat.Builder(this, MONITOR_CHANNEL)
             .setSmallIcon(R.drawable.ic_notify_logo)
-            .setLargeIcon(BitmapFactory.decodeResource(
-                resources, R.drawable.ic_notify_large))
             .setContentTitle(tr("由于通知需要，后台运行中"))
             .setContentText(summary)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
