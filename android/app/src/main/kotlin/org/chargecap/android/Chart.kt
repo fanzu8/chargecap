@@ -15,6 +15,7 @@ import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -65,8 +66,10 @@ fun LiveChart(
     selected: List<String>,
     windowSecs: Int,
     seq: Long,
-    /** The live reading, drawn as the moving head of every curve. */
-    tip: Snapshot,
+    /** The live reading, drawn as the moving head of every curve.  Reading the
+     *  State inside the draw scope makes the 500 ms publisher invalidate the
+     *  canvas; a stored sample is not required for the head to move. */
+    tipState: State<Snapshot>,
     modifier: Modifier = Modifier,
 ) {
     val measurer = rememberTextMeasurer()
@@ -82,7 +85,10 @@ fun LiveChart(
     val vs = remember { FloatArray(MAX_POINTS + 2) }
 
     Canvas(modifier) {
-        // `seq` is read so a new sample redraws the chart
+        // Reading the live State here is what makes the canvas redraw on every
+        // publish, not only when the sampler stores another point; `seq` keeps
+        // identical readings redrawing too.
+        val tip = tipState.value
         @Suppress("UNUSED_EXPRESSION") seq
 
         fun text(s: String, x: Float, y: Float, color: Color, align: String = "left") {

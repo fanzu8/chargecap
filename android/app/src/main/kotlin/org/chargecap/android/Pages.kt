@@ -203,7 +203,11 @@ private val GROUPS = listOf(
  */
 @Composable
 fun PanelPage(state: AppState, inset: PaddingValues) {
-    val snapshot by state.samples.collectAsState()
+    // keep the State itself: the chart reads it inside its draw scope, so a
+    // new reading invalidates the canvas at 500 ms even when no stored sample
+    // has arrived yet
+    val snapshotState = state.samples.collectAsState()
+    val snapshot = snapshotState.value
 
     PageColumn(inset) {
         LimitsSection()
@@ -211,7 +215,7 @@ fun PanelPage(state: AppState, inset: PaddingValues) {
         SleepSection(state.inhibit, state::setInhibit)
 
         // the table and the chart are one card, under one 实时采集 switch
-        LiveSection(state, snapshot)
+        LiveSection(state, snapshot, snapshotState)
     }
 }
 

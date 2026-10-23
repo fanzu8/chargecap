@@ -47,6 +47,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -1005,8 +1006,11 @@ fun ChartRows(
     windowSecs: Int,
     onWindow: (Int) -> Unit,
     seq: Long,
-    /** the live reading: the moving head of the curve */
-    sample: Snapshot,
+    /** the live reading: the moving head of the curve.  It is the State, not
+     *  just its current value, so the canvas observes the 500 ms publisher
+     *  directly; a new interval cannot leave the head waiting for a stored
+     *  sample. */
+    tipState: State<Snapshot>,
     /** 实时采集: off means there is nothing to chart */
     live: Boolean,
     /** 图形化: whether the sampler keeps what it reads */
@@ -1044,7 +1048,7 @@ fun ChartRows(
                 selected = selected,
                 windowSecs = windowSecs,
                 seq = seq,
-                tip = sample,
+                tipState = tipState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(CHART_HEIGHT),
@@ -1080,7 +1084,7 @@ fun ChartRows(
  * notification rules -- this gates the page, not the monitor.
  */
 @Composable
-fun LiveSection(state: AppState, snapshot: Snapshot) {
+fun LiveSection(state: AppState, snapshot: Snapshot, tipState: State<Snapshot>) {
     Section {
         // the card's two gates, one at each end
         LiveSwitchesRow(
@@ -1104,7 +1108,7 @@ fun LiveSection(state: AppState, snapshot: Snapshot) {
             windowSecs = state.windowSecs,
             onWindow = state::setWindow,
             seq = if (state.live) snapshot.seq else 0L,
-            sample = snapshot,
+            tipState = tipState,
             live = state.live,
             recording = state.recording,
         )

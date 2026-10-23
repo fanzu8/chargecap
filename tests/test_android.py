@@ -480,7 +480,7 @@ class ChartTest(SourceTest):
         """The stored samples may be 20 s apart; the curve still has to move at
         the page's 500 ms, so the live reading is drawn as its head."""
         chart = kotlin("Chart.kt")
-        self.assertHas(chart, "tip: Snapshot,")
+        self.assertHas(chart, "tipState: State<Snapshot>,")
         # the head is part of the range, not clamped into a stale one: after
         # an interval change the old range pinned it until the next sample
         self.assertHas(chart, "val liveValue = snapshotValue(tip, m.key)")
@@ -490,8 +490,16 @@ class ChartTest(SourceTest):
         self.assertLacks(chart, "coerceIn(lo, hi)")
         self.assertHas(chart, "xs[count] = pw")
         self.assertHas(chart, "drawCircle(m.color")
-        self.assertHas(kotlin("Panel.kt"), "tip = sample,")
-        self.assertHas(kotlin("Panel.kt"), "sample = snapshot,")
+        # the State is read inside the draw scope, so the 500 ms publisher --
+        # not the next stored sample -- invalidates the canvas
+        self.assertHas(chart, "val tip = tipState.value")
+        panel = kotlin("Panel.kt")
+        self.assertHas(panel, "tipState: State<Snapshot>,")
+        self.assertHas(panel, "tipState = tipState,")
+        self.assertHas(kotlin("Pages.kt"),
+                       "LiveSection(state, snapshot, snapshotState)")
+        self.assertHas(kotlin("Pages.kt"),
+                       "val snapshotState = state.samples.collectAsState()")
 
     def test_sample_rate_and_history_match_the_gtk_app(self):
         """Half a second per sample and a 48 hour history: the Android ring
