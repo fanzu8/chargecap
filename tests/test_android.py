@@ -625,6 +625,13 @@ class CapabilityTest(SourceTest):
         self.assertHas(battery, "abs(milli - magnitude) <= abs(micro - magnitude)")
         self.assertHas(battery, "private var perMilli: Boolean? = null")
         self.assertHas(battery, "perMilli == true")
+        # the reader keeps its counter history across a read-rate change; a new
+        # reader has no slope, so a full idle phone's current would read 0 for
+        # the seconds until a new history exists
+        self.assertHas(battery, "private var reader: BatteryReader? = null")
+        self.assertHas(battery,
+                       "val battery = reader ?: BatteryReader(context.applicationContext).also { reader = it }")
+        self.assertLacks(battery, "val reader = BatteryReader(context)")
         # a counter reset is not a current
         self.assertHas(battery, "abs(amps) > MAX_SLOPE_A")
         self.assertHas(battery, "history.clear()")

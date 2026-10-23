@@ -314,6 +314,14 @@ object Monitor {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var job: Job? = null
 
+    /**
+     * One reader for the process.  Its coulomb-counter history and the
+     * mA/µA decision must survive a change of the read rate: a new reader has
+     * no slope yet, and a full idle phone reports CURRENT_NOW 0, so the current
+     * would read 0 for the seconds it takes to build a new history.
+     */
+    private var reader: BatteryReader? = null
+
     /** How often the reader wakes: 500 ms for a page, 3 s for the rules. */
     @Volatile
     private var readMs: Long = SAMPLE_MS
@@ -341,7 +349,7 @@ object Monitor {
         if (job?.isActive == true && readMs == ms) return
         job?.cancel()
         readMs = ms
-        val reader = BatteryReader(context)
+        val battery = reader ?: BatteryReader(context.applicationContext).also { reader = it }
         job = scope.launch {
             // signed current extremes, reset every time the reader restarts
             var minMA: Double? = null
@@ -354,7 +362,7 @@ object Monitor {
                 // the sleep record rides on the same pass: the wall clock
                 // against uptime, which stands still while the system dozes
                 Sleeps.tick(System.currentTimeMillis(), SystemClock.uptimeMillis())
-                val raw = reader.read()
+                val raw = battery.read()
                 val ma = raw.currentA?.let { it * 1000.0 }
                 if (ma != null) {
                     minMA = minMA?.let { min(it, ma) } ?: ma
