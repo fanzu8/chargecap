@@ -64,10 +64,11 @@ class Prefs(context: Context) {
         get() = store.getBoolean("live", true)
         set(value) = store.edit().putBoolean("live", value).apply()
 
-    /** 图形化: whether the chart keeps the readings it sees.  Off until asked --
-     *  a look at the phone is not a consent to record every sample. */
+    /** 图形化: whether the chart keeps the readings it sees.  On until asked --
+     *  a fresh 高级 page should show the chart, not a card that looks broken;
+     *  the switch is still the opt-out. */
     var record: Boolean
-        get() = store.getBoolean("record", false)
+        get() = store.getBoolean("record", true)
         set(value) = store.edit().putBoolean("record", value).apply()
 
     // ---- 通知 (the table of them is NOTIFICATIONS, in AppState.kt) ---------

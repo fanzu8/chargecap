@@ -317,10 +317,10 @@ class SizeTest(unittest.TestCase):
         self.assertIn("if paint and self.record:", self.src)
 
     def test_the_chart_records_only_while_asked(self):
-        """采集 is the chart's master switch: off until it is asked, and while
-        it is off nothing is kept.  The live table above still reads -- the
-        switch gates the record, not the look."""
-        self.assertIn('self.record = bool(load_ui().get("record", False))',
+        """采集 is the chart's master switch: on by default so a fresh page
+        shows the chart, and while it is off nothing is kept.  The live table
+        above still reads -- the switch gates the record, not the look."""
+        self.assertIn('self.record = bool(load_ui().get("record", True))',
                       self.src)
         self.assertIn('if self.record and self._sample_due(now):', self.src)
         # 图形化 lives on 实时采集's row now, as a switch of its own
@@ -1080,6 +1080,9 @@ class NotifyWiringTest(unittest.TestCase):
         """通知 and 高级 are the two tabs; 设置 is the gear after the language,
         as in the Android header -- not a third word."""
         self.assertIn('(("notify", _("通知")), ("panel", _("高级")))', self.src)
+        # the pair is at the header's left edge, not centered in the title slot
+        self.assertIn("header.pack_start(tabs)", self.src)
+        self.assertNotIn("header.set_title_widget(tabs)", self.src)
         self.assertIn('stack.add_named(self._settings_page(), "settings")',
                       self.src)
         self.assertIn('stack.set_visible_child_name("panel")', self.src)

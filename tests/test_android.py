@@ -1660,8 +1660,9 @@ class RulesTest(SourceTest):
         battery = kotlin("Battery.kt")
         self.assertHas(battery, "var recording: Boolean = false")
         self.assertHas(battery, "if (due && recording) {")
-        # the switch is stored, and read once before the sampler starts
-        self.assertHas(kotlin("Prefs.kt"), 'store.getBoolean("record", false)')
+        # the switch is stored, and read once before the sampler starts.  A
+        # fresh install shows the chart; the switch remains the opt-out
+        self.assertHas(kotlin("Prefs.kt"), 'store.getBoolean("record", true)')
         self.assertHas(kotlin("AppState.kt"), "fun setRecording(on: Boolean) {")
         self.assertHas(kotlin("AppState.kt"), "Sampling.apply(prefs.context, prefs)")
         self.assertHas(kotlin("MainActivity.kt"),

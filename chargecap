@@ -1155,10 +1155,9 @@ class Window(Adw.ApplicationWindow):
         # on.  On by default -- a panel that shows nothing on a fresh install
         # looks broken -- but one switch stops all of it.
         self.live = bool(load_ui().get("live", True))
-        # 图形化: the chart records nothing until this is switched on.  Off
-        # until asked: a fresh window is a look at the phone, not a consent to
-        # keep every reading it saw.
-        self.record = bool(load_ui().get("record", False))
+        # 图形化: the chart records while this is on.  On by default so a fresh
+        # 高级 page shows the chart; the switch is still the opt-out.
+        self.record = bool(load_ui().get("record", True))
 
         provider = Gtk.CssProvider()
         provider.load_from_string(CSS + metric_css() + scale_css())
@@ -1205,7 +1204,10 @@ class Window(Adw.ApplicationWindow):
         stack.set_visible_child_name("panel")
         self.tabs["panel"].set_active(True)
         stack.connect("notify::visible-child-name", self._sync_tabs)
-        header.set_title_widget(tabs)
+        # 通知 and 高级 sit at the left, where the Android header has them; the
+        # header bar's title slot would center them between the window controls
+        # and the three end buttons.
+        header.pack_start(tabs)
         tv.set_content(stack)
         self.set_content(tv)
 
