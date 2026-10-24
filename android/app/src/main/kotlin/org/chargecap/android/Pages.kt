@@ -249,8 +249,8 @@ fun SettingsPage(inset: PaddingValues) {
             LinkRow(tr("电池优化"), battery) { openBatteryOptimization(context) }
             RowDivider()
             val exact = if (exactAlarms(context)) tr("已允许")
-                        else tr("允许系统闹钟拉起监控")
-            LinkRow(tr("精确闹钟"), exact) { openExactAlarm(context) }
+                        else tr("允许系统定时唤醒 chargecap")
+            LinkRow(tr("SCHEDULE_EXACT_ALARM 权限"), exact) { openExactAlarm(context) }
             RowDivider()
             Text(
                 tr("最近任务里锁定 chargecap；并在手机管家的应用启动管理中打开自启动、关联启动和后台活动"),

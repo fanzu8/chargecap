@@ -167,10 +167,10 @@ private val EN = mapOf(
     "各厂商的设置位置不一样，下面的按钮带你去找" to "Every vendor files these in a different place; the buttons below take you there",
     "自启动" to "Autostart",
     "电池优化" to "Battery optimization",
-    "精确闹钟" to "Exact alarms",
+    "SCHEDULE_EXACT_ALARM 权限" to "SCHEDULE_EXACT_ALARM permission",
     "允许 chargecap 在后台继续运行" to "Let chargecap keep running in the background",
     "已允许后台运行" to "Background running allowed",
-    "允许系统闹钟拉起监控" to "Let the system alarm restart the monitor",
+    "允许系统定时唤醒 chargecap" to "Let the system wake chargecap on schedule",
     "已允许" to "Allowed",
     "最近任务里锁定 chargecap；并在手机管家的应用启动管理中打开自启动、关联启动和后台活动" to
         "Lock chargecap in the recent tasks, and enable autostart, associated start and background activity in the vendor's app launch settings",

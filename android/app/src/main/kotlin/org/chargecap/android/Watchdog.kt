@@ -26,7 +26,7 @@ import android.os.SystemClock
  * a PendingIntent held by AlarmManager, so the service arms a one-shot alarm
  * and RestartReceiver re-arms it after every firing.  When the process is gone,
  * the receiver starts the foreground service again; when it is still alive,
- * the receiver only arms the next minute.
+ * the receiver only arms the next check.
  *
  * This is deliberately a one-shot plus re-arm, not setRepeating: the system
  * treats repeating alarms inexactly, and a killed receiver would leave the
@@ -37,8 +37,13 @@ object Watchdog {
 
     private const val REQUEST = 0x5A17
 
-    /** Long enough not to fight the system, short enough to notice a kill. */
-    const val DELAY_MS = 60_000L
+    /**
+     * The recovery latency the phone asks for.  Outside Doze an exact
+     * AllowWhileIdle alarm honours this; inside Doze Android stretches it to
+     * roughly one per 9 minutes, which the foreground service and its wake
+     * lock normally keep us out of.  A vendor freezer can still delay it.
+     */
+    const val DELAY_MS = 5_000L
 
     private fun pending(context: Context): PendingIntent =
         PendingIntent.getBroadcast(
@@ -56,7 +61,7 @@ object Watchdog {
     fun arm(context: Context, delayMs: Long = DELAY_MS) {
         val app = context.applicationContext
         val manager = app.getSystemService(AlarmManager::class.java) ?: return
-        val at = SystemClock.elapsedRealtime() + delayMs.coerceAtLeast(10_000L)
+        val at = SystemClock.elapsedRealtime() + delayMs.coerceAtLeast(1_000L)
         val pending = pending(app)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&

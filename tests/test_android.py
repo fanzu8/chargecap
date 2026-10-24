@@ -81,8 +81,8 @@ ANDROID_ONLY = {
     "电池优化",
     "允许 chargecap 在后台继续运行",
     "已允许后台运行",
-    "精确闹钟",
-    "允许系统闹钟拉起监控",
+    "SCHEDULE_EXACT_ALARM 权限",
+    "允许系统定时唤醒 chargecap",
     "已允许",
     "最近任务里锁定 chargecap；并在手机管家的应用启动管理中打开自启动、关联启动和后台活动",
     "打开",
@@ -1321,7 +1321,7 @@ class NotifyPageTest(SourceTest):
         self.assertHas(page, "openAutostartSettings(context)")
         self.assertHas(page, "openNotificationSettings(context)")
         self.assertHas(page, 'LinkRow(tr("电池优化")')
-        self.assertHas(page, 'LinkRow(tr("精确闹钟")')
+        self.assertHas(page, 'LinkRow(tr("SCHEDULE_EXACT_ALARM 权限")')
         self.assertHas(page, "openBatteryOptimization(context)")
         self.assertHas(page, "openExactAlarm(context)")
         self.assertHas(page, "最近任务里锁定")
@@ -1934,6 +1934,9 @@ class BackgroundTest(SourceTest):
         self.assertHas(watch, "setAndAllowWhileIdle")
         self.assertHas(watch, "ELAPSED_REALTIME_WAKEUP")
         self.assertHas(watch, "RestartReceiver")
+        # the requested recovery latency, and no 10 s floor hiding it
+        self.assertHas(watch, "DELAY_MS = 5_000L")
+        self.assertHas(watch, "coerceAtLeast(1_000L)")
         restart = kotlin("RestartReceiver.kt")
         self.assertHas(restart, "MonitorService.running")
         self.assertHas(restart, "MonitorService.start(app)")
