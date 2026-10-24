@@ -19,14 +19,14 @@ import android.os.Build
 import android.os.SystemClock
 
 /**
- * The alarm that outlives the process.
+ * The 30 s sampling alarm, and the last thing that outlives the process.
  *
- * A foreground service, START_STICKY and a wake lock keep the reader running
- * while Android lets it.  The one thing that survives even a killed process is
- * a PendingIntent held by AlarmManager, so the service arms a one-shot alarm
- * and RestartReceiver re-arms it after every firing.  When the process is gone,
- * the receiver starts the foreground service again; when it is still alive,
- * the receiver only arms the next check.
+ * A foreground service keeps the process, but without a wake lock the CPU may
+ * sleep between alarms.  AlarmManager's PendingIntent survives a killed
+ * process, so every firing is one reading: when the service is alive
+ * RestartReceiver takes a single sample; when it is not, the receiver starts
+ * the service and the service's onCreate takes that first sample.  Either way
+ * the next alarm is armed from the receiver, and the CPU can sleep until it.
  *
  * This is deliberately a one-shot plus re-arm, not setRepeating: the system
  * treats repeating alarms inexactly, and a killed receiver would leave the
@@ -38,12 +38,12 @@ object Watchdog {
     private const val REQUEST = 0x5A17
 
     /**
-     * The recovery latency the phone asks for.  Outside Doze an exact
+     * One background reading every 30 s.  Outside Doze an exact
      * AllowWhileIdle alarm honours this; inside Doze Android stretches it to
-     * roughly one per 9 minutes, which the foreground service and its wake
-     * lock normally keep us out of.  A vendor freezer can still delay it.
+     * roughly one per 9 minutes.  The app's battery-optimization whitelist
+     * relaxes that on some ROMs; a vendor freezer can still delay it.
      */
-    const val DELAY_MS = 5_000L
+    const val DELAY_MS = 30_000L
 
     private fun pending(context: Context): PendingIntent =
         PendingIntent.getBroadcast(

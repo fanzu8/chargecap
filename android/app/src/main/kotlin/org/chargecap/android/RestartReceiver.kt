@@ -19,15 +19,17 @@ import android.content.Intent
  * The other end of Watchdog: the process may have been killed since the alarm
  * was armed, so this receiver is often the only code of ours that runs.
  *
- * Starting a foreground service from an exact alarm is one of the few
- * background starts Android still permits; when the phone refuses even that,
- * the next alarm simply tries again.
+ * A live service gets one sample from this alarm; a dead one is first started
+ * (an exact alarm is one of the few background starts Android still permits,
+ * and onCreate takes that first sample).  Then the next alarm is armed and
+ * the CPU is left to sleep; there is no wake lock to hold between them.
  */
 class RestartReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Watchdog.ACTION_RESTART) return
         val app = context.applicationContext
-        if (!Prefs(app).notify) {
+        val prefs = Prefs(app)
+        if (!prefs.notify) {
             Watchdog.cancel(app)
             return
         }
@@ -37,6 +39,9 @@ class RestartReceiver : BroadcastReceiver() {
             } catch (t: Throwable) {
                 // the alarm remains armed and will try again
             }
+        } else if (!prefs.inhibitSleep && !(Sampling.visible && prefs.live)) {
+            // the service is alive but idle: this alarm is the reader
+            Monitor.sampleOnce(app)
         }
         Watchdog.arm(app)
     }

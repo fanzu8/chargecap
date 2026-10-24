@@ -54,14 +54,14 @@ private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 private var watching: Job? = null
 
 /**
- * How often a threshold is judged, in milliseconds.
+ * How often a threshold is judged while a page is in front, in milliseconds.
  *
  * The display reads at 500 ms because a number on screen should look live;
  * a battery's temperature, voltage and current do not need that for a
  * reminder -- three seconds is the same rate the postmarketOS daemon publishes
- * at, and it turns 6 judgments a second into one every third second.  A
- * crossing between two judgments is seen at the next one, so a plug or a
- * temperature spike is noticed within three seconds.
+ * at, and it turns 6 judgments a second into one every third second.  With no
+ * page there is no stream to throttle: each sample (the 30 s alarm, or 禁止休眠's
+ * 3 s reader) is judged at once, so a power broadcast is not held back.
  */
 private const val JUDGE_MS = 3000L
 
@@ -109,10 +109,14 @@ fun startNotifier(context: Context) {
     watching = scope.launch {
         var judgedAt = 0L
         Monitor.state.collect { sample ->
+            // the StateFlow's default value is not a reading: let the first
+            // real sample arm the rules, or the default's plugged=false would
+            // be remembered as a crossing
+            if (sample.seq == 0L) return@collect
             val now = SystemClock.elapsedRealtime()
-            // the first sample arms the rules at once; after that, every
-            // JUDGE_MS -- the readings in between are for the panel
-            if (judgedAt == 0L || now - judgedAt >= JUDGE_MS) {
+            // a page repaints at 500 ms and is judged every JUDGE_MS; with no
+            // page every sample is already rare, and every one is judged
+            if (judgedAt == 0L || !Sampling.visible || now - judgedAt >= JUDGE_MS) {
                 judgedAt = now
                 NotifyRules.sample(sample) { rule -> remind(app, rule) }
             }

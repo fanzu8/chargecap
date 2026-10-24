@@ -438,6 +438,9 @@ class AppState(
         inhibitState = on
         prefs.inhibitSleep = on
         if (on) inhibitor.acquire() else inhibitor.release()
+        // 禁止休眠 is also the explicit continuous-sample mode: on starts the
+        // 3 s reader, off lets the 30 s alarm do one reading at a time
+        Sampling.apply(prefs.context, prefs)
         // 禁止休眠's turn-on is the moment 休眠记录 counts from: the
         // record answers "did it hold while I asked?", so it starts when the
         // asking does -- nothing to do with 通知开关

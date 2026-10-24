@@ -104,9 +104,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         // the wake lock dies with the process anyway; releasing it here keeps
-        // the switch from outliving the app that owns it.  The voice engine is
-        // left alone: the monitor service may still have a reminder to say.
-        if (isFinishing) inhibitor.release()
+        // the switch from outliving the app that owns it -- unless 禁止休眠 is
+        // still on, in which case the service (and the switch) keep it.  The
+        // voice engine is left alone: the monitor service may still have a
+        // reminder to say.
+        if (isFinishing && !prefs.inhibitSleep) inhibitor.release()
         super.onDestroy()
     }
 }

@@ -21,7 +21,6 @@ import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
@@ -35,15 +34,18 @@ import androidx.core.content.ContextCompat
  * small ongoing notification it must show, the same kind music players and
  * navigation apps use.
  *
- * The service owns the same three things the activity starts: the sampler, the
- * rules and the voice.  When Android recreates the process after a kill, only
- * the service's onCreate runs -- so the rules are armed from Prefs here, and
- * the first sample arms them silently (turning notifications on, or booting,
- * is not a crossing).
+ * The service owns the same two things the activity starts: the rules and the
+ * voice.  When Android recreates the process after a kill, only the service's
+ * onCreate runs -- so the rules are armed from Prefs here, and the first real
+ * sample arms them silently (turning notifications on, or booting, is not a
+ * crossing).
+ *
+ * It deliberately does not hold a wake lock.  The 30 s Watchdog alarm wakes
+ * the process for one reading and then lets the CPU sleep; 禁止休眠 is the
+ * explicit opt-in that keeps a lock (chargecap:sleep) and the 3 s reader.
  */
 class MonitorService : Service() {
     private lateinit var prefs: Prefs
-    private var wake: PowerManager.WakeLock? = null
 
     /** The switches and lines as the page changes them; the line follows. */
     private val changed =
@@ -61,8 +63,11 @@ class MonitorService : Service() {
         // call twice, and this is the one that survives the activity
         Sleeps.start(prefs)
         Voice.start(this)
-        // no page in front unless the activity says otherwise: this is the
-        // 3 s reader the rules need, not the 500 ms one a table needs
+        // 禁止休眠 is the only continuous lock: restore it here because the
+        // service may be the only component left after a kill or a reboot
+        if (prefs.inhibitSleep) SleepInhibitor.get(this).acquire()
+        // no page in front unless the activity says otherwise: only 禁止休眠
+        // starts the continuous 3 s reader; otherwise the 30 s alarm samples
         Sampling.apply(this, prefs)
         armRules(prefs)
         startNotifier(this)
@@ -76,25 +81,15 @@ class MonitorService : Service() {
         }
         prefs.listen(changed)
 
-        // A foreground service keeps the process, but not the CPU: with the
-        // screen off the phone suspends and the 3 s sampler stops until
-        // something wakes it.  A partial wake lock is what makes "通知开关 on"
-        // mean "the readings keep coming" -- and why it costs battery; the
-        // switch off stops the service and releases it.
-        try {
-            wake = getSystemService(PowerManager::class.java)
-                ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
-                              "chargecap:notifications")
-                ?.apply {
-                    setReferenceCounted(false)
-                    acquire()
-                }
-        } catch (e: Exception) {
-            wake = null
+        // The service was just started (boot, update, the switch, or an alarm
+        // whose process had died): take the first reading now, so the rules
+        // have something to arm against without waiting 30 s.
+        if (!prefs.inhibitSleep && !(Sampling.visible && prefs.live)) {
+            Monitor.sampleOnce(this)
         }
 
         // the one thing that survives this process: a one-shot alarm that
-        // starts the service again if Android or the vendor kills it
+        // samples once if we are alive and starts the service if we are not
         Watchdog.arm(this)
     }
 
@@ -118,8 +113,6 @@ class MonitorService : Service() {
 
     override fun onDestroy() {
         running = false
-        wake?.release()
-        wake = null
         prefs.unlisten(changed)
         // the switch may have been turned off while the page was gone: stop
         // the reader if nothing else needs it

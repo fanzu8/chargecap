@@ -15,6 +15,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import android.os.PowerManager
 import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -195,6 +196,7 @@ class BatteryReader(context: Context) {
         return reported / if (perMilli == true) 1_000.0 else 1_000_000.0
     }
 
+    @Synchronized
     fun read(): Snapshot {
         val nowMs = SystemClock.elapsedRealtime()
         // the sticky intent is the same data the system UI shows
@@ -411,6 +413,52 @@ object Monitor {
         job = null
     }
 
+    /**
+     * One reading for the 30 s alarm.
+     *
+     * The continuous reader is stopped in this mode, so this is the only
+     * caller reading the battery: publish one snapshot and let the notifier
+     * judge it.  The alarm that wakes us is the one that keeps the process
+     * alive across a kill; a wake lock is not needed between alarms.
+     */
+    @Synchronized
+    fun sampleOnce(context: Context) {
+        // The alarm wakes the CPU, but the notifier posts on another coroutine;
+        // keep the CPU for two seconds so the banner/voice actually leaves
+        // before the process sleeps again.  This is per sample, not a lock held
+        // between samples.
+        try {
+            context.getSystemService(PowerManager::class.java)
+                ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "chargecap:sample")
+                ?.apply {
+                    setReferenceCounted(false)
+                    acquire(2_000L)
+                }
+        } catch (_: Throwable) {
+            // without it the next alarm simply takes the reading again
+        }
+        val battery = reader ?: BatteryReader(context.applicationContext).also { reader = it }
+        Sleeps.tick(System.currentTimeMillis(), SystemClock.uptimeMillis())
+        val raw = battery.read()
+        val ma = raw.currentA?.let { it * 1000.0 }
+        val previous = _state.value
+        val min = when {
+            ma == null -> previous.currentMinMA
+            previous.currentMinMA == null -> ma
+            else -> minOf(previous.currentMinMA, ma)
+        }
+        val max = when {
+            ma == null -> previous.currentMaxMA
+            previous.currentMaxMA == null -> ma
+            else -> maxOf(previous.currentMaxMA, ma)
+        }
+        _state.value = raw.copy(
+            seq = previous.seq + 1,
+            currentMinMA = min,
+            currentMaxMA = max,
+        )
+    }
+
     /** The chart's setting moved: store the next sample at once. */
     fun resetStore() {
         storeDue = true
@@ -421,8 +469,9 @@ object Monitor {
  * Which of the three readers is on.
  *
  * 实时采集 with the page in front: 500 ms, for the numbers and the chart.
- * The notification service alone: 3 s, for the rules.  Neither: nothing at
- * all -- no timer, no battery read, no wake-up.
+ * 禁止休眠 on: 3 s, the explicit continuous mode -- that switch is also the
+ * only continuous wake lock.  Neither: no timer and no battery read; the 30 s
+ * alarm in Watchdog wakes the process for one sample instead.
  */
 object Sampling {
     /** Whether a page is on screen; the activity sets it in onStart/onStop. */
@@ -437,7 +486,7 @@ object Sampling {
         }
         val live = prefs.live && visible
         val chart = live && prefs.record
-        // the chart rides on the live reader; the 3 s reader has no page
+        // the chart rides on the live reader; the continuous reader has no page
         if (chart && !Monitor.recording) Monitor.resetStore()
         Monitor.recording = chart
         when {
@@ -448,7 +497,9 @@ object Sampling {
                 if (chart) minOf(Monitor.SAMPLE_MS, prefs.sampleMs.toLong())
                 else Monitor.SAMPLE_MS,
             )
-            prefs.notify -> Monitor.start(context, Monitor.RULES_MS)
+            // the user asked for no sleep: this is the one continuous mode,
+            // and SleepInhibitor is the lock that makes it hold
+            prefs.inhibitSleep -> Monitor.start(context, Monitor.RULES_MS)
             else -> Monitor.stop()
         }
     }

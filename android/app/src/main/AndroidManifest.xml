@@ -99,6 +99,17 @@
         <receiver
             android:name=".RestartReceiver"
             android:exported="false" />
+
+        <!-- the plug and the cable are broadcast; the 30 s alarm would
+             otherwise make them wait for the next sample -->
+        <receiver
+            android:name=".PowerReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

@@ -31,7 +31,7 @@ KOTLIN = os.path.join(MAIN, "kotlin", "org", "chargecap", "android")
 SOURCES = ("Strings.kt", "Battery.kt", "Chart.kt", "AppState.kt", "Rules.kt",
            "Pages.kt", "Panel.kt", "MainActivity.kt", "Notifications.kt",
            "MonitorService.kt", "BootReceiver.kt", "Watchdog.kt",
-           "RestartReceiver.kt", "Prefs.kt", "Sleep.kt",
+           "RestartReceiver.kt", "PowerReceiver.kt", "Prefs.kt", "Sleep.kt",
            "SystemSettings.kt", "Theme.kt", "Voice.kt")
 
 # the strings the Android UI needs and the GTK app has no counterpart for:
@@ -86,6 +86,8 @@ ANDROID_ONLY = {
     "已允许",
     "最近任务里锁定 chargecap；并在手机管家的应用启动管理中打开自启动、关联启动和后台活动",
     "打开",
+    # the background pace the notification page promises
+    "后台每 30 秒检查一次；需要连续判断请到高级打开禁止休眠",
     # the notification channel: the row the system's 通知 page hinges on
     "充电提醒",
     "电量、温度、电压、电流或功率越过你设的线时提醒",
@@ -619,8 +621,10 @@ class CapabilityTest(SourceTest):
         self.assertHas(kotlin("Prefs.kt"), "fun get(context: Context): SleepInhibitor")
         self.assertHas(kotlin("MainActivity.kt"), "SleepInhibitor.get(this)")
         self.assertLacks(kotlin("MainActivity.kt"), "SleepInhibitor(this)")
-        # ... and it is released with the app, never left behind
+        # ... and it is released with the app, never left behind -- unless
+        # 禁止休眠 is still on, when the service keeps the explicit lock
         self.assertHas(kotlin("MainActivity.kt"), "inhibitor.release()")
+        self.assertHas(kotlin("MainActivity.kt"), "!prefs.inhibitSleep")
 
     def test_the_current_is_the_hal_reading_calibrated_by_the_counter(self):
         """CURRENT_NOW is the only reading that carries the current's sign, but
@@ -1799,7 +1803,8 @@ class AboutTest(SourceTest):
 
 
 class SamplingTest(SourceTest):
-    """Three readers, three reasons: page 500 ms, rules 3 s, neither nothing."""
+    """Three readers, three reasons: page 500 ms, 禁止休眠 3 s, neither the
+    30 s alarm's one-shot."""
 
     def test_the_modes(self):
         battery = kotlin("Battery.kt")
@@ -1813,8 +1818,17 @@ class SamplingTest(SourceTest):
         self.assertHas(battery,
                        "if (chart) minOf(Monitor.SAMPLE_MS, prefs.sampleMs.toLong())")
         self.assertHas(battery, "else Monitor.SAMPLE_MS")
-        self.assertHas(battery, "prefs.notify -> Monitor.start(context, Monitor.RULES_MS)")
+        self.assertHas(battery, "prefs.inhibitSleep -> Monitor.start(context, Monitor.RULES_MS)")
         self.assertHas(battery, "else -> Monitor.stop()")
+
+    def test_a_sample_holds_the_cpu_just_long_enough_to_post(self):
+        """The 30 s alarm may wake the CPU, but the notifier posts on another
+        coroutine: a short, timed lock covers that gap; it is not held between
+        samples."""
+        battery = kotlin("Battery.kt")
+        self.assertHas(battery, '"chargecap:sample"')
+        self.assertHas(battery, "setReferenceCounted(false)")
+        self.assertHas(battery, "acquire(2_000L)")
 
     def test_a_page_says_when_it_is_visible(self):
         main = kotlin("MainActivity.kt")
@@ -1847,6 +1861,9 @@ class BackgroundTest(SourceTest):
         self.assertHas(manifest, 'android:foregroundServiceType="specialUse"')
         self.assertHas(manifest, 'android:stopWithTask="false"')
         self.assertHas(manifest, 'android:name=".RestartReceiver"')
+        self.assertHas(manifest, 'android:name=".PowerReceiver"')
+        self.assertHas(manifest, "android.intent.action.ACTION_POWER_CONNECTED")
+        self.assertHas(manifest, "android.intent.action.ACTION_POWER_DISCONNECTED")
         self.assertHas(manifest, "PROPERTY_SPECIAL_USE_FGS_SUBTYPE")
         for perm in ("FOREGROUND_SERVICE", "FOREGROUND_SERVICE_SPECIAL_USE",
                      "RECEIVE_BOOT_COMPLETED"):
@@ -1862,31 +1879,37 @@ class BackgroundTest(SourceTest):
                      "Sampling.apply(this, prefs)", "NotifyRules.arm(rules)",
                      "stopForeground(STOP_FOREGROUND_REMOVE)",
                      "cancelAll(this)", "Watchdog.arm(this)",
-                     "Watchdog.cancel(this)", "onTaskRemoved(", "running = true"):
+                     "Watchdog.cancel(this)", "onTaskRemoved(", "running = true",
+                     "SleepInhibitor.get(this)", "Monitor.sampleOnce(this)"):
             with self.subTest(part=part):
                 self.assertHas(service, part)
         # the shade says why it is there, and nothing else: no readings, no
         # ticker -- the sampling belongs to the rules, not to the notification
         self.assertHas(service, 'tr("由于通知需要，后台运行中")')
         self.assertHas(service, "setColor(0xFF22C55E.toInt())")
-        # the screen off suspends the CPU, and a foreground service does not
-        # keep it awake: without this the 3 s sampler slept until the app opened
-        self.assertHas(service, "PARTIAL_WAKE_LOCK")
-        self.assertHas(service, "setReferenceCounted(false)")
-        self.assertHas(service, "wake?.release()")
+        # the service does not hold the CPU: the 30 s alarm takes one sample,
+        # and 禁止休眠 is the explicit lock (SleepInhibitor's chargecap:sleep)
+        self.assertLacks(service, "chargecap:notifications")
+        self.assertLacks(service, "newWakeLock")
+        self.assertLacks(service, "wake?.release()")
         self.assertLacks(service, "Monitor.state.collect")
         self.assertLacks(service, "ongoingText")
 
-    def test_thresholds_are_judged_every_three_seconds(self):
-        """The panel reads at 500 ms; a reminder does not need to.  The rules
-        are judged at the postmarketOS daemon's own rate -- three seconds --
-        and the first sample still arms them at once."""
+    def test_thresholds_are_judged_on_every_background_sample(self):
+        """The panel reads at 500 ms; a reminder does not need to.  With a page
+        in front the rules are judged at the daemon's 3 s; with no page the
+        sample itself is rare, so every one -- alarm or power broadcast -- is
+        judged at once and the first real sample still arms them."""
         notifier = kotlin("Notifications.kt")
         self.assertHas(notifier, "JUDGE_MS = 3000L")
-        self.assertHas(notifier, "judgedAt == 0L || now - judgedAt >= JUDGE_MS")
+        self.assertHas(notifier, "judgedAt == 0L || !Sampling.visible || now - judgedAt >= JUDGE_MS")
+        self.assertHas(notifier, "sample.seq == 0L")
         self.assertHas(notifier, "Monitor.state.collect")
         # ... and the display is still the 500 ms sample
-        self.assertHas(kotlin("Battery.kt"), "const val SAMPLE_MS = 500L")
+        battery = kotlin("Battery.kt")
+        self.assertHas(battery, "const val SAMPLE_MS = 500L")
+        self.assertHas(battery, "fun sampleOnce(context: Context)")
+        self.assertHas(battery, "prefs.inhibitSleep -> Monitor.start")
 
     def test_the_line_says_what_is_watched(self):
         """The shade names the notifications that are on, with their lines --
@@ -1925,23 +1948,37 @@ class BackgroundTest(SourceTest):
         self.assertHas(boot, "MonitorService.start(context)")
         self.assertHas(boot, "Watchdog.arm(context)")
 
-    def test_the_watchdog_arms_an_alarm_that_outlives_the_process(self):
-        """The service can be killed without onDestroy, so the restart has to
-        live in AlarmManager, not in a coroutine."""
+    def test_the_watchdog_is_the_thirty_second_sample_alarm(self):
+        """The service can be killed without onDestroy, so the sampling and the
+        restart both have to live in AlarmManager, not in a coroutine."""
         watch = kotlin("Watchdog.kt")
         self.assertHas(watch, "setExactAndAllowWhileIdle")
         self.assertHas(watch, "canScheduleExactAlarms")
         self.assertHas(watch, "setAndAllowWhileIdle")
         self.assertHas(watch, "ELAPSED_REALTIME_WAKEUP")
         self.assertHas(watch, "RestartReceiver")
-        # the requested recovery latency, and no 10 s floor hiding it
-        self.assertHas(watch, "DELAY_MS = 5_000L")
+        self.assertHas(watch, "DELAY_MS = 30_000L")
         self.assertHas(watch, "coerceAtLeast(1_000L)")
         restart = kotlin("RestartReceiver.kt")
         self.assertHas(restart, "MonitorService.running")
         self.assertHas(restart, "MonitorService.start(app)")
+        self.assertHas(restart, "Monitor.sampleOnce(app)")
+        self.assertHas(restart, "Sampling.visible && prefs.live")
+        self.assertHas(restart, "prefs.inhibitSleep")
         self.assertHas(restart, "Watchdog.arm(app)")
         self.assertHas(restart, "Watchdog.cancel(app)")
+
+    def test_the_plug_is_a_broadcast_not_a_thirty_second_wait(self):
+        """A power broadcast is the one reading Android hands over for free;
+        take it now, so 电源连接/断开 is not held to the alarm's pace."""
+        power = kotlin("PowerReceiver.kt")
+        self.assertHas(power, "Intent.ACTION_POWER_CONNECTED")
+        self.assertHas(power, "Intent.ACTION_POWER_DISCONNECTED")
+        self.assertHas(power, "Monitor.sampleOnce(app)")
+        self.assertHas(power, "MonitorService.start(app)")
+        self.assertHas(power, "Sampling.visible && prefs.live")
+        # ... and the service is started if the process died, before the sample
+        self.assertHas(kotlin("MonitorService.kt"), "Monitor.sampleOnce(this)")
 
 
 class ProjectTest(SourceTest):

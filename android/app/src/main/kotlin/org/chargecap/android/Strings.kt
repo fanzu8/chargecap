@@ -126,6 +126,8 @@ private val EN = mapOf(
     "设置" to "Settings",
     "返回" to "Back",
     "通知开关" to "Notifications",
+    "后台每 30 秒检查一次；需要连续判断请到高级打开禁止休眠" to
+        "Checks every 30 s in the background; turn on Inhibit sleep in Advanced for continuous judgement",
     "通知方式" to "Notify by",
     "横幅" to "Banner",
     "语音" to "Voice",

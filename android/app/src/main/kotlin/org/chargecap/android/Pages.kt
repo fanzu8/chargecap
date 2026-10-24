@@ -103,6 +103,14 @@ fun NotifyPage(state: AppState, inset: PaddingValues) {
                 }
             }
         }
+        // the background pace is a promise worth saying plainly: one alarm
+        // reading every 30 s unless the user explicitly asks for no sleep
+        Text(
+            tr("后台每 30 秒检查一次；需要连续判断请到高级打开禁止休眠"),
+            fontSize = scale().small.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+        )
         // the groups, in the order the page reads: the charge itself, the plug
         // and the charging state, then one group per kind of reading -- a
         // temperature and a voltage are not the same subject
