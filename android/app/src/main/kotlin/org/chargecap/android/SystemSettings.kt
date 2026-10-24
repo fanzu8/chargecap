@@ -11,6 +11,7 @@
 
 package org.chargecap.android
 
+import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
@@ -78,6 +79,48 @@ fun openAutostartSettings(context: Context): Boolean {
     for (path in AUTOSTART) {
         val screen = ComponentName.unflattenFromString(path) ?: continue
         if (start(context, Intent().setComponent(screen))) return true
+    }
+    return openAppInfo(context)
+}
+
+/** 电池优化: the one switch that keeps Doze from stopping the reader. */
+fun batteryExempt(context: Context): Boolean {
+    val power = context.getSystemService(PowerManager::class.java) ?: return true
+    return power.isIgnoringBatteryOptimizations(context.packageName)
+}
+
+/** The system's request dialog, then the full list as the fallback. */
+fun openBatteryOptimization(context: Context): Boolean {
+    // already exempt: do not ask again, show the list so it can be undone
+    if (batteryExempt(context)) {
+        return start(context, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+    }
+    try {
+        val request = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                             Uri.parse("package:${context.packageName}"))
+        if (start(context, request)) return true
+    } catch (_: Throwable) {
+        // fall through to the list
+    }
+    return start(context, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+}
+
+/** 精确闹钟: needed for the watchdog on Android 12 and later. */
+fun exactAlarms(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+    val manager = context.getSystemService(AlarmManager::class.java) ?: return true
+    return manager.canScheduleExactAlarms()
+}
+
+fun openExactAlarm(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        try {
+            val request = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                 Uri.parse("package:${context.packageName}"))
+            if (start(context, request)) return true
+        } catch (_: Throwable) {
+            // fall through to the app page
+        }
     }
     return openAppInfo(context)
 }

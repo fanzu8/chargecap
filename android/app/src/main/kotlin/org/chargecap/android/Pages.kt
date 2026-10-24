@@ -243,6 +243,21 @@ fun SettingsPage(inset: PaddingValues) {
             LinkRow(tr("通知横幅与声音"), tr("在通知设置里放开横幅和声音")) {
                 openNotificationSettings(context)
             }
+            RowDivider()
+            val battery = if (batteryExempt(context)) tr("已允许后台运行")
+                          else tr("允许 chargecap 在后台继续运行")
+            LinkRow(tr("电池优化"), battery) { openBatteryOptimization(context) }
+            RowDivider()
+            val exact = if (exactAlarms(context)) tr("已允许")
+                        else tr("允许系统闹钟拉起监控")
+            LinkRow(tr("精确闹钟"), exact) { openExactAlarm(context) }
+            RowDivider()
+            Text(
+                tr("最近任务里锁定 chargecap；并在手机管家的应用启动管理中打开自启动、关联启动和后台活动"),
+                fontSize = scale().small.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                modifier = Modifier.padding(vertical = 8.dp),
+            )
         }
 
         // 关于: plain text, no card and no copy button.  It is a block of

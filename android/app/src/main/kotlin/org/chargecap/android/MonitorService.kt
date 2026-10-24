@@ -53,6 +53,7 @@ class MonitorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        running = true
         prefs = Prefs(this)
         createNotificationChannel(this)
 
@@ -91,18 +92,32 @@ class MonitorService : Service() {
         } catch (e: Exception) {
             wake = null
         }
+
+        // the one thing that survives this process: a one-shot alarm that
+        // starts the service again if Android or the vendor kills it
+        Watchdog.arm(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // 通知开关 was turned off while we were not running: nothing to keep
         if (!Prefs(this).notify) {
+            Watchdog.cancel(this)
             stopSelf()
             return START_NOT_STICKY
         }
+        running = true
+        Watchdog.arm(this)
         return START_STICKY
     }
 
+    /** The task was swiped away; keep the alarm chain alive. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        if (Prefs(this).notify) Watchdog.arm(this)
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
+        running = false
         wake?.release()
         wake = null
         prefs.unlisten(changed)
@@ -113,6 +128,10 @@ class MonitorService : Service() {
         // the service is going away: its banners belong to a process that is
         // not here any more, and an update must not leave them in the shade
         cancelAll(this)
+        // onDestroy is not guaranteed after SIGKILL, but when it runs the alarm
+        // is the last thing this process can leave behind
+        if (Prefs(this).notify) Watchdog.arm(this)
+        else Watchdog.cancel(this)
         super.onDestroy()
     }
 
@@ -169,6 +188,11 @@ class MonitorService : Service() {
 
     companion object {
         const val ONGOING_ID = 1
+
+        /** Read by RestartReceiver: a dead process starts here at false. */
+        @Volatile
+        var running = false
+            private set
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(

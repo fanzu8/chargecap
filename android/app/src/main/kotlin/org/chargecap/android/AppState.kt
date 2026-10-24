@@ -316,6 +316,7 @@ class AppState(
             stopReminders()
             Voice.stop()
             cancelAll(prefs.context)
+            Watchdog.cancel(prefs.context)
         }
     }
 

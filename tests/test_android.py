@@ -30,7 +30,8 @@ KOTLIN = os.path.join(MAIN, "kotlin", "org", "chargecap", "android")
 
 SOURCES = ("Strings.kt", "Battery.kt", "Chart.kt", "AppState.kt", "Rules.kt",
            "Pages.kt", "Panel.kt", "MainActivity.kt", "Notifications.kt",
-           "MonitorService.kt", "BootReceiver.kt", "Prefs.kt", "Sleep.kt",
+           "MonitorService.kt", "BootReceiver.kt", "Watchdog.kt",
+           "RestartReceiver.kt", "Prefs.kt", "Sleep.kt",
            "SystemSettings.kt", "Theme.kt", "Voice.kt")
 
 # the strings the Android UI needs and the GTK app has no counterpart for:
@@ -77,6 +78,13 @@ ANDROID_ONLY = {
     "在通知设置里放开横幅和声音",
     "自启动",
     "让 chargecap 开机后自己起来",
+    "电池优化",
+    "允许 chargecap 在后台继续运行",
+    "已允许后台运行",
+    "精确闹钟",
+    "允许系统闹钟拉起监控",
+    "已允许",
+    "最近任务里锁定 chargecap；并在手机管家的应用启动管理中打开自启动、关联启动和后台活动",
     "打开",
     # the notification channel: the row the system's 通知 page hinges on
     "充电提醒",
@@ -1265,6 +1273,7 @@ class NotifyPageTest(SourceTest):
         self.assertHas(body, "Voice.stop()")
         # and the banners already in the shade: off means nothing left behind
         self.assertHas(body, "cancelAll(prefs.context)")
+        self.assertHas(body, "Watchdog.cancel(prefs.context)")
         notifier = kotlin("Notifications.kt")
         self.assertHas(notifier, "fun stopReminders() {")
         self.assertHas(notifier, "reminders.values.forEach { it.cancel() }")
@@ -1311,6 +1320,15 @@ class NotifyPageTest(SourceTest):
                         page.index('LinkRow(tr("通知横幅与声音")'))
         self.assertHas(page, "openAutostartSettings(context)")
         self.assertHas(page, "openNotificationSettings(context)")
+        self.assertHas(page, 'LinkRow(tr("电池优化")')
+        self.assertHas(page, 'LinkRow(tr("精确闹钟")')
+        self.assertHas(page, "openBatteryOptimization(context)")
+        self.assertHas(page, "openExactAlarm(context)")
+        self.assertHas(page, "最近任务里锁定")
+        system = kotlin("SystemSettings.kt")
+        self.assertHas(system, "ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS")
+        self.assertHas(system, "ACTION_REQUEST_SCHEDULE_EXACT_ALARM")
+        self.assertHas(system, "canScheduleExactAlarms")
         # ... and the phone may keep them somewhere else entirely
         self.assertHas(page, 'tr("各厂商的设置位置不一样，下面的按钮带你去找")')
 
@@ -1827,6 +1845,8 @@ class BackgroundTest(SourceTest):
         manifest = self.manifest()
         self.assertHas(manifest, 'android:name=".MonitorService"')
         self.assertHas(manifest, 'android:foregroundServiceType="specialUse"')
+        self.assertHas(manifest, 'android:stopWithTask="false"')
+        self.assertHas(manifest, 'android:name=".RestartReceiver"')
         self.assertHas(manifest, "PROPERTY_SPECIAL_USE_FGS_SUBTYPE")
         for perm in ("FOREGROUND_SERVICE", "FOREGROUND_SERVICE_SPECIAL_USE",
                      "RECEIVE_BOOT_COMPLETED"):
@@ -1841,7 +1861,8 @@ class BackgroundTest(SourceTest):
                      "startNotifier(this)", "Voice.start(this)",
                      "Sampling.apply(this, prefs)", "NotifyRules.arm(rules)",
                      "stopForeground(STOP_FOREGROUND_REMOVE)",
-                     "cancelAll(this)"):
+                     "cancelAll(this)", "Watchdog.arm(this)",
+                     "Watchdog.cancel(this)", "onTaskRemoved(", "running = true"):
             with self.subTest(part=part):
                 self.assertHas(service, part)
         # the shade says why it is there, and nothing else: no readings, no
@@ -1902,6 +1923,22 @@ class BackgroundTest(SourceTest):
         self.assertHas(boot, "cancelAll(context)")
         self.assertHas(boot, "if (Prefs(context).notify)")
         self.assertHas(boot, "MonitorService.start(context)")
+        self.assertHas(boot, "Watchdog.arm(context)")
+
+    def test_the_watchdog_arms_an_alarm_that_outlives_the_process(self):
+        """The service can be killed without onDestroy, so the restart has to
+        live in AlarmManager, not in a coroutine."""
+        watch = kotlin("Watchdog.kt")
+        self.assertHas(watch, "setExactAndAllowWhileIdle")
+        self.assertHas(watch, "canScheduleExactAlarms")
+        self.assertHas(watch, "setAndAllowWhileIdle")
+        self.assertHas(watch, "ELAPSED_REALTIME_WAKEUP")
+        self.assertHas(watch, "RestartReceiver")
+        restart = kotlin("RestartReceiver.kt")
+        self.assertHas(restart, "MonitorService.running")
+        self.assertHas(restart, "MonitorService.start(app)")
+        self.assertHas(restart, "Watchdog.arm(app)")
+        self.assertHas(restart, "Watchdog.cancel(app)")
 
 
 class ProjectTest(SourceTest):
@@ -1939,7 +1976,9 @@ class ProjectTest(SourceTest):
              "android.permission.POST_NOTIFICATIONS",
              "android.permission.FOREGROUND_SERVICE",
              "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
-             "android.permission.RECEIVE_BOOT_COMPLETED"])
+             "android.permission.RECEIVE_BOOT_COMPLETED",
+             "android.permission.SCHEDULE_EXACT_ALARM",
+             "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"])
 
     def test_the_vendor_packages_are_named_for_android_11(self):
         """From API 30 another package is invisible unless it is named, and an

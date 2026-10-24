@@ -31,6 +31,12 @@ class BootReceiver : BroadcastReceiver() {
         // a boot/update killed the process that owned the old banners; they are
         // not this process's state any more, so do not leave them in the shade
         cancelAll(context)
-        if (Prefs(context).notify) MonitorService.start(context)
+        if (Prefs(context).notify) {
+            MonitorService.start(context)
+            // the old alarm was relative to the previous boot
+            Watchdog.arm(context)
+        } else {
+            Watchdog.cancel(context)
+        }
     }
 }
