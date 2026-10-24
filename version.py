@@ -21,7 +21,7 @@ git.  Where neither can answer, the number stands alone.
 import os
 import subprocess
 
-VERSION = "0.0.3"
+VERSION = "1.0.0"
 
 # written by install.sh beside this file
 BUILD_INFO = "/usr/local/lib/chargecap/build-info"
@@ -52,7 +52,7 @@ def _git():
 
 
 def build_label():
-    """0.0.3 (a1b2c3d4-20261021), or just 0.0.3 when nothing knows better."""
+    """1.0.0 (a1b2c3d4-20261021), or just 1.0.0 when nothing knows better."""
     info = _git() or _installed()
     if not info:
         return VERSION

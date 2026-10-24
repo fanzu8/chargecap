@@ -10,7 +10,7 @@ import java.util.Date
 
 // The project's version, and the tag it ships as: CI refuses to release a v*
 // tag that does not match this string.
-val appVersion = "0.0.3"
+val appVersion = "1.0.0"
 
 /** The commit this APK was built from, eight characters: what 关于 prints. */
 fun gitCommit(): String = try {
@@ -26,7 +26,7 @@ fun gitCommit(): String = try {
 /** The day it was built, as yyyyMMdd -- 20261021 reads at a glance. */
 fun buildDay(): String = SimpleDateFormat("yyyyMMdd").format(Date())
 
-/** 0.0.3 -> 2, 1.2.3 -> 10203: the number Android orders upgrades by, derived. */
+/** 1.0.0 -> 10000, 1.2.3 -> 10203: the number Android orders upgrades by, derived. */
 fun versionCodeOf(version: String): Int {
     val (major, minor, patch) = version.split(".").map { it.toInt() }
     return major * 10000 + minor * 100 + patch
@@ -49,7 +49,7 @@ android {
         targetSdk = 36
         versionCode = versionCodeOf(appVersion)
         versionName = appVersion
-        // 关于 says which build this is: 0.0.3 (a1b2c3d4-20261021)
+        // 关于 says which build this is: 1.0.0 (a1b2c3d4-20261021)
         buildConfigField("String", "GIT_COMMIT", "\"${gitCommit()}\"")
         buildConfigField("String", "BUILD_DATE", "\"${buildDay()}\"")
     }

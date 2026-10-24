@@ -2163,8 +2163,8 @@ class CiTest(SourceTest):
         self.assertHas(self.workflow, "SHA256SUMS")
         self.assertHas(self.workflow, 'chargecap-${VERSION}-build-info.txt')
         readme = read(ANDROID, "README.md")
-        self.assertHas(readme, "chargecap-0.0.3-universal.apk")
-        self.assertHas(readme, "chargecap-0.0.3-universal-debug.apk")
+        self.assertHas(readme, "chargecap-1.0.0-universal.apk")
+        self.assertHas(readme, "chargecap-1.0.0-universal-debug.apk")
         self.assertHas(readme, "chargecap-<version>-<abi>-<variant>.apk")
 
     def test_the_build_info_says_who_signed_it(self):
@@ -2227,7 +2227,7 @@ class CiTest(SourceTest):
         `appVersion`, and the versionCode is derived from it -- one number to
         bump, and nothing to forget."""
         gradle = read(ANDROID, "app", "build.gradle.kts")
-        self.assertHas(gradle, 'val appVersion = "0.0.3"')
+        self.assertHas(gradle, 'val appVersion = "1.0.0"')
         self.assertHas(gradle, "versionCode = versionCodeOf(appVersion)")
         self.assertHas(gradle, "versionName = appVersion")
         self.assertHas(self.workflow, "appVersion")

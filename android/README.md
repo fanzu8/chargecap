@@ -113,7 +113,7 @@ known screens are tried in turn and the app's own page is the fallback), then
 通知横幅与声音 -- the channel's own page, where EMUI for one keeps 横幅 off
 until asked.
 
-关于 carries the version (`0.0.3 (a1b2c3d4-20261021)` -- the number, the commit
+关于 carries the version (`1.0.0 (a1b2c3d4-20261021)` -- the number, the commit
 and the build day), the author, a 更新 row that opens the releases page in the
 browser, and the privacy line: no network, no data collected.  All four are plain
 selectable text -- long-press to copy.
@@ -145,16 +145,16 @@ the vendor packages an autostart Intent has to reach.
 ## Releases
 
 CI builds on every change to `android/`, and on a `v*` tag attaches the result to
-a release; the tag has to match the version the build declares (`v0.0.3` needs
-`appVersion = "0.0.3"`).  One file per release,
+a release; the tag has to match the version the build declares (`v1.0.0` needs
+`appVersion = "1.0.0"`).  One file per release,
 `chargecap-<version>-<abi>-<variant>.apk`:
 
 | | |
 |---|---|
-| `chargecap-0.0.3-universal.apk` | the release: signed with `keystore/`, minified, not debuggable |
-| `chargecap-0.0.3-universal-debug.apk` | a branch or PR build: attached to the run, never released |
+| `chargecap-1.0.0-universal.apk` | the release: signed with `keystore/`, minified, not debuggable |
+| `chargecap-1.0.0-universal-debug.apk` | a branch or PR build: attached to the run, never released |
 | `SHA256SUMS` | the APK's hash, for `sha256sum -c` |
-| `chargecap-0.0.3-build-info.txt` | commit, build time, ABIs, toolchain, signer |
+| `chargecap-1.0.0-build-info.txt` | commit, build time, ABIs, toolchain, signer |
 
 `<version>` is the tag without its `v`, `<abi>` is `universal` (all four ABIs in
 one file: splitting them would save 36 KB of a 3.4 MB download).  The `keystore/`
