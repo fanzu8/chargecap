@@ -22,6 +22,7 @@ read in either language by either process.
 """
 import json
 import os
+import shlex
 import shutil
 import time
 
@@ -38,14 +39,18 @@ DEFAULT_GAP = 2
 # how it arrives: a banner or a voice, one or the other, never both
 KINDS = (("banner", "横幅"), ("voice", "语音"))
 
-# How the phone says a sentence out loud.  espeak-ng is the first choice: it is
-# the engine itself, needs no daemon, and can be told a language (cmn for a
-# Chinese sentence) instead of trusting the session's locale.  espeak is the
-# same engine under its old name; spd-say -- speech-dispatcher -- is the
-# fallback for a phone that has the session's voice but neither binary.  Without
-# any of them 语音 has nothing to say, so the page offers banners alone: a list
-# of options that do nothing is worse than a shorter list.
+# How the phone says a sentence out loud.  The voice picked in the tuning
+# window: espeak-ng's female f4 Mandarin, fast, high and quietly rendered to a
+# pipe instead of opening its own audio device.  --stdout | aplay keeps the
+# audio path the same as the tuner without leaving a WAV behind.  spd-say stays
+# as the fallback for a machine without espeak-ng/aplay.
 VOICE_ENGINES = ("espeak-ng", "espeak", "spd-say")
+VOICE_VOICE = "cmn+f4"
+VOICE_RATE = 209
+VOICE_PITCH = 99
+VOICE_AMP = 85
+VOICE_GAP = 5
+VOICE_PLAYER = "aplay"
 
 
 def _find_voice():
@@ -62,8 +67,9 @@ VOICE_CMD = _find_voice()
 def voice_command(text, lang=None):
     """The command that says [text], or None when there is no engine.
 
-    spd-say takes the sentence as it is; espeak's default voice is English, so
-    a Chinese sentence asks for Mandarin, and an English one takes the default.
+    A Chinese sentence goes through espeak-ng's WAV output and aplay; English
+    takes the engine directly.  spd-say, when it is all the phone has, asks for
+    the same female variant and leaves the audio path to the dispatcher.
     """
     if not VOICE_CMD:
         return None
@@ -71,15 +77,21 @@ def voice_command(text, lang=None):
     name = os.path.basename(VOICE_CMD)
     if name in ("espeak", "espeak-ng"):
         if zh:
-            # cmn+f3 is the higher female variant; the default male Mandarin
-            # is the flat, hard-to-listen-to one.  A little slower and higher
-            # takes the edge off without hiding the words.
-            return [VOICE_CMD, "-v", "cmn+f3", "-s", "145", "-p", "60",
-                    "-a", "160", text]
+            script = (
+                "%s -v %s -s %d -p %d -a %d -g %d --stdout %s | %s -q" % (
+                    shlex.quote(VOICE_CMD), VOICE_VOICE, VOICE_RATE,
+                    VOICE_PITCH, VOICE_AMP, VOICE_GAP,
+                    shlex.quote(text), VOICE_PLAYER,
+                )
+            )
+            return ["sh", "-c", script]
         return [VOICE_CMD, text]
-    if name == "spd-say" and zh:
-        return [VOICE_CMD, "-l", "zh", "-t", "female1",
-                "-r", "-20", "-p", "-10", text]
+    if name == "spd-say":
+        base = [VOICE_CMD, "-N", "chargecap", "-n", "main"]
+        if zh:
+            return base + ["-y", "Chinese (Mandarin, latin as English)+f4",
+                           "-r", "20", "-p", "100", "-w", text]
+        return base + ["-w", text]
     return [VOICE_CMD, text]
 
 

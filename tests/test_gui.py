@@ -799,15 +799,18 @@ class NotifyTableTest(unittest.TestCase):
             notifications.VOICE_CMD = "/usr/bin/espeak-ng"
             self.assertEqual(
                 notifications.voice_command("充电完成", "zh"),
-                ["/usr/bin/espeak-ng", "-v", "cmn+f3", "-s", "145",
-                 "-p", "60", "-a", "160", "充电完成"])
+                ["sh", "-c",
+                 "/usr/bin/espeak-ng -v cmn+f4 -s 209 -p 99 -a 85 -g 5 "
+                 "--stdout '充电完成' | aplay -q"])
             self.assertEqual(
                 notifications.voice_command("Charging complete", "en"),
                 ["/usr/bin/espeak-ng", "Charging complete"])
             notifications.VOICE_CMD = "/usr/bin/spd-say"
-            self.assertEqual(notifications.voice_command("充电完成", "zh"),
-                             ["/usr/bin/spd-say", "-l", "zh", "-t", "female1",
-                              "-r", "-20", "-p", "-10", "充电完成"])
+            self.assertEqual(
+                notifications.voice_command("充电完成", "zh"),
+                ["/usr/bin/spd-say", "-N", "chargecap", "-n", "main",
+                 "-y", "Chinese (Mandarin, latin as English)+f4",
+                 "-r", "20", "-p", "100", "-w", "充电完成"])
             notifications.VOICE_CMD = None
             self.assertIsNone(notifications.voice_command("充电完成", "zh"))
         finally:
@@ -858,6 +861,11 @@ class NotifierTest(unittest.TestCase):
         # becomes a zombie for as long as the notifier lives
         self.assertIn("proc.wait(timeout=1)", self.src)
         self.assertIn("proc.kill()", self.src)
+        # the WAV pipeline is a shell plus espeak-ng plus aplay: stop the group
+        self.assertIn("start_new_session=True", self.src)
+        self.assertIn("os.killpg(group, signal.SIGTERM)", self.src)
+        self.assertIn(
+            '"spd-say", "-N", "chargecap", "-n", "main", "-S"', self.src)
         # a reminder re-reads the answers at every repeat, so a switch thrown
         # mid-count is honoured without a watcher beside it
         self.assertIn("self.reminders.stop_all()", self.src)

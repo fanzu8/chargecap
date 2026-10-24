@@ -24,6 +24,7 @@ app's banner -- same id, same icon -- and the voice is the phone's.
 """
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -95,29 +96,55 @@ class Voice:
 
     def __init__(self):
         self._proc = None
+        self._group = None
+        self._spd = False
 
     def say(self, text, lang=None):
         self.stop()
         cmd = rules.voice_command(text, lang)
         if cmd:
             try:
-                self._proc = subprocess.Popen(cmd)
+                self._spd = os.path.basename(cmd[0]) == "spd-say"
+                # the WAV pipeline is `sh -c espeak-ng ... | aplay`; a process
+                # group lets stop take the shell and both children together
+                self._proc = subprocess.Popen(cmd, start_new_session=True)
+                self._group = self._proc.pid
             except Exception:
                 self._proc = None
+                self._group = None
+                self._spd = False
 
     def stop(self):
         """Silent now: the switch went off, or the next thing is being said."""
         proc, self._proc = self._proc, None
-        if proc is None:
-            return
-        try:
-            if proc.poll() is None:
-                proc.terminate()
-            proc.wait(timeout=1)
-        except Exception:
+        group, self._group = self._group, None
+        spd, self._spd = self._spd, False
+        if proc is not None:
             try:
-                proc.kill()
+                if group is not None:
+                    os.killpg(group, signal.SIGTERM)
+                elif proc.poll() is None:
+                    proc.terminate()
+            except Exception:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+            try:
                 proc.wait(timeout=1)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        if spd:
+            # the dispatcher speaks asynchronously; terminating its client is
+            # not enough, so send its own stop message too
+            try:
+                subprocess.run(
+                    ["spd-say", "-N", "chargecap", "-n", "main", "-S"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=1)
             except Exception:
                 pass
 
