@@ -4,20 +4,16 @@
 
 **English** | [中文](README.zh.md)
 
-**Two things: notifications** and **power state**.  Without root it falls back
-to plain power / battery monitoring.  Supported:
+**Two things: notifications** and **power state**. (Without root it falls back
+to plain power / battery monitoring.) Supported:
 
 - **Android 7.0 (API 24) and newer**: every phone, no root needed
 - **postmarketOS**: mainline kernels whose charger exposes the interfaces it
   needs (root required -- see [Supported devices](#supported-devices))
 
-The GTK app is a small **root daemon** plus an **unprivileged GTK4/libadwaita
-app**; Android gets the same panel, chart and words in **Kotlin + Jetpack
-Compose**.  Its Chinese name is **电电** (diàndiàn).
+### 1. Notifications
 
-## Two things
-
-**1. Notifications.**  Thirteen thresholds -- charging complete, low battery,
+Thirteen thresholds -- charging complete, low battery,
 temperature, voltage, current, power, the plug and the cable -- each arriving as
 a banner or as a spoken sentence, with its own repeat count and interval.  They
 keep working with the panel closed: Android takes a reading every 30 seconds
@@ -32,10 +28,12 @@ once.
 <sub>Android 通知页 / Android's notification page: banner or voice, on a phone
 that is plugged in.</sub>
 
-**2. Power state.**  Charging stops at the **upper** limit and resumes at the
-**lower** one; between them nothing changes.  This is the part that needs the
-root daemon on postmarketOS; on an unrooted Android phone the rows are shown but
-switched off, and everything else still monitors.
+### 2. Power state
+
+Charging stops at the **upper** limit and resumes at the **lower** one; between
+them nothing changes.  This is the part that needs the root daemon on
+postmarketOS; on an unrooted Android phone the rows are shown but switched off,
+and everything else still monitors.
 
 **Core features**
 - notifications by banner or voice (an elderly phone's charge reminder)
