@@ -105,7 +105,7 @@ fun openBatteryOptimization(context: Context): Boolean {
     return start(context, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
 }
 
-/** SCHEDULE_EXACT_ALARM: needed for the watchdog on Android 12 and later. */
+/** SCHEDULE_EXACT_ALARM: needed for the 30 s sampler on Android 12 and later. */
 fun exactAlarms(context: Context): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
     val manager = context.getSystemService(AlarmManager::class.java) ?: return true

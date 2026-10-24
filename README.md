@@ -4,9 +4,9 @@
 
 **English** | [中文](README.zh.md)
 
-Notifications -- charging complete, low battery, temperature and the rest --
-and keeping a plugged-in phone's battery inside a set window; without root it
-falls back to plain power / battery monitoring.  Supported:
+**Two things: notifications you can hear, and a battery window for a phone that
+stays plugged in.**  Without root it falls back to plain power / battery
+monitoring.  Supported:
 
 - **Android 7.0 (API 24) and newer**: every phone, no root needed
 - **postmarketOS**: mainline kernels whose charger exposes the interfaces it
@@ -15,6 +15,28 @@ falls back to plain power / battery monitoring.  Supported:
 The GTK app is a small **root daemon** plus an **unprivileged GTK4/libadwaita
 app**; Android gets the same panel, chart and words in **Kotlin + Jetpack
 Compose**.  Its Chinese name is **电电** (diàndiàn).
+
+## Two things
+
+**1. Notifications.**  Thirteen thresholds -- charging complete, low battery,
+temperature, voltage, current, power, the plug and the cable -- each arriving as
+a banner or as a spoken sentence, with its own repeat count and interval.  They
+keep working with the panel closed: Android takes a reading every 30 seconds
+without a continuous CPU wake lock -- each reading holds a short 2 s lock while
+the banner or voice is posted (turn on 禁止休眠 for the continuous 3 s reader) --
+and the power lead being plugged or pulled is handled by a system broadcast at
+once.
+
+<img src="docs/android-notifications-en.png" width="38%" alt="Android notification page: 13 notifications, banner or voice">
+
+<br>
+<sub>Android 通知页 / Android's notification page: banner or voice, on a phone
+that is plugged in.</sub>
+
+**2. Battery window.**  Charging stops at the **upper** limit and resumes at the
+**lower** one; between them nothing changes.  This is the part that needs the
+root daemon on postmarketOS; on an unrooted Android phone the rows are shown but
+switched off, and everything else still monitors.
 
 **Core features**
 - notifications by banner or voice (an elderly phone's charge reminder)
@@ -113,7 +135,10 @@ there; the nodes are found by the attributes they expose — see `TODO.md`.
 
 Install the APK: take `chargecap-<version>-universal.apk` from
 [Releases](https://github.com/fanzu8/chargecap/releases) and open it on the phone
-(or `adb install -r` it).  Its permissions are `WAKE_LOCK`, the notification one Android 13 asks for, and
+(or `adb install -r` it).  Its permissions are `WAKE_LOCK` for 禁止休眠, the
+notification permission Android 13 asks for, `SCHEDULE_EXACT_ALARM` for the
+30 second background reading (Android 12+; the app's 设置 row opens the system
+page), `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` for the battery exemption row, and
 the foreground-service and boot-completed pair that keep the rules alive with
 the screen off; it opens in dark mode following the system language.
 To build it yourself, see [`android/README.md`](android/README.md).
@@ -140,7 +165,7 @@ Stdlib Python, no pip dependencies; the tests need neither a phone nor GTK (nor,
 for the Android sources they also check, an Android SDK):
 
 ```sh
-python3 -m unittest        # 278 tests
+python3 -m unittest        # 281 tests
 ```
 
 They need neither a phone nor GTK (nor an Android SDK for the sources they

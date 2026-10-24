@@ -17,15 +17,23 @@ read.
 | **Health percentage** | Android reports a health *state*, never `charge_full` |
 
 禁止休眠 works -- a partial wake lock, where the daemon holds a
-`systemd-inhibit` -- as does everything else that can be read, the chart
-included: samples in memory only (48 hours at 2 Hz), taken off the UI thread, so
-it keeps filling while the screen is off.  And **休眠记录**, the row under it,
-is where that promise can be caught: the sampler reads its two clocks every
-pass, and uptime's shortage against the wall clock is how long the system slept
-inside it.  It is a record, not a notification -- a sleeping system delivers
-nothing -- so the row has no switch, no 通知方式, no 次数, no 间隔.  It has
-nothing to do with 通知开关 either: the count is the last 禁止休眠 turn-on's, a
-reboot clears it, and a tap opens the sleeps it kept.
+`systemd-inhibit` -- and it is the **only** continuous wake lock.  With the
+panel closed the service does not hold the CPU: an exact 30 s alarm wakes it for
+one reading, the notifier posts, and the CPU sleeps again.  Each reading keeps a
+`chargecap:sample` lock for 2 s so the banner/voice can leave; that is per
+sample, not a lock held between them.  Turning 禁止休眠 on is the explicit opt-in
+for the 3 s reader and its `chargecap:sleep` lock.  A plugged or pulled lead is
+a system broadcast and takes its reading at once.
+
+The chart is the page's own: samples in memory only (48 hours at 2 Hz), taken
+off the UI thread, and written only while the panel is open; 禁止休眠 keeps the
+3 s reader, but the curve is not recorded behind the panel.  And **休眠记录**,
+the row under 禁止休眠, is where that promise can be caught: the sampler reads
+its two clocks every pass, and uptime's shortage against the wall clock is how
+long the system slept inside it.  It is a record, not a notification -- a
+sleeping system delivers nothing -- so the row has no switch, no 通知方式, no
+次数, no 间隔.  It has nothing to do with 通知开关 either: the count is the last
+禁止休眠 turn-on's, a reboot clears it, and a tap opens the sleeps it kept.
 
 The header carries two pages and a gear.  The app opens on **通知**, a page the
 GTK app has too -- the same notifications, the same words, its own tab beside
@@ -125,9 +133,12 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 `org.chargecap.android`, Android 7.0 (API 24) and up, tested on Android 9 (EMUI
-9.1).  Permissions: `WAKE_LOCK` for 禁止休眠; `POST_NOTIFICATIONS` -- granted at
-install up to Android 12, asked for when 通知开关 goes on from 13; and
-`FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_SPECIAL_USE` /
+9.1) and Android 12 / HarmonyOS 4.2 (ANA-AN00).  Permissions: `WAKE_LOCK` for
+禁止休眠 and the per-sample `chargecap:sample`; `POST_NOTIFICATIONS` -- granted
+at install up to Android 12, asked for when 通知开关 goes on from 13;
+`SCHEDULE_EXACT_ALARM` for the 30 s reading on Android 12+ (the app's 设置 row
+opens the system page); `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` for the battery
+row; and `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_SPECIAL_USE` /
 `RECEIVE_BOOT_COMPLETED` for the background monitor.  The `<queries>` also names
 the vendor packages an autostart Intent has to reach.
 

@@ -4,13 +4,30 @@
 
 [English](README.md) | **中文**
 
-充电等通知功能、设定维持手机电量在区间内，没 root 权限则退化为电源 / 电池状态监控。支持：
+**两件事：能听见的通知，和给长期插电的手机设一个电量窗口。** 没 root
+权限则退化为电源 / 电池状态监控。支持：
 
 - **Android 7.0（API 24）及以上**：所有机型，不需要 root
 - **postmarketOS**：mainline 内核、充电器接口齐备的机型（需要 root，见[支持机型](#支持机型)）
 
 界面是 GTK4/libadwaita 写的，自己不需要任何特权；真正动充电器的是一个 root
 守护进程。安卓端是同样的面板、曲线和文案，用 Kotlin + Jetpack Compose 重写。
+
+## 两件事
+
+**1. 通知。** 十三条阈值：充电完成、电量过低、温度、电压、电流、功率、插头和
+数据线，每条都可以选横幅或语音，并有自己的次数和间隔。面板关着也照常工作：
+安卓每 30 秒醒一次、读一次，不常驻占用 CPU；每次只持 2 秒短锁，让横幅或语音
+发出去。要连续 3 秒判断就打开「禁止休眠」。电源插拔由系统广播立即处理。
+
+<img src="docs/android-notifications-zh.png" width="38%" alt="安卓通知页：十三条通知，横幅或语音">
+
+<br>
+<sub>安卓通知页：十三条通知，横幅或语音，长期插电的手机。</sub>
+
+**2. 电量窗口。** 电量到**上限**停止充电，降到**下限**恢复，区间内保持现状。
+这是 postmarketOS 上需要 root 守护进程的那一半；安卓没有 root 时，限制行会
+照常显示但被禁用，其余部分仍可监控。
 
 **核心功能**
 - 语音/横幅通知（老人机 充电提醒）
@@ -83,7 +100,11 @@
 
 直接装 APK：从 [Releases](https://github.com/fanzu8/chargecap/releases) 下载
 `chargecap-<版本>-universal.apk`，在手机上打开安装（或 `adb install -r` 它）。
-权限有 `WAKE_LOCK`、Android 13 起才会问的通知权限，以及让通知在没有界面时继续工作的前台服务 / 开机启动两项。第一次打开就是暗色、跟随系统语言。
+权限有 `WAKE_LOCK`（禁止休眠）、Android 13 起才会问的通知权限、
+`SCHEDULE_EXACT_ALARM`（Android 12 起的 30 秒后台读取；app 的「设置」行会打开
+系统页面）、`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`（电池优化豁免那一行），以及
+让通知在没有界面时继续工作的前台服务 / 开机启动两项。第一次打开就是暗色、
+跟随系统语言。
 想自己编译，见 [`android/README.md`](android/README.md)。
 
 ### postmarketOS
@@ -107,7 +128,7 @@ sudo ./uninstall.sh        # 全部清掉，并把充电器恢复成"允许 + �
 标准库 Python，没有 pip 依赖；测试不需要手机、不需要 GTK，也不需要 Android SDK：
 
 ```sh
-python3 -m unittest        # 278 个用例
+python3 -m unittest        # 281 个用例
 ```
 
 测试不需要手机、GTK，也不需要 Android SDK；CI 在 Python 3.10–3.13 上跑。

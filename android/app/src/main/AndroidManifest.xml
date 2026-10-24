@@ -26,7 +26,7 @@
     <!-- ... and start again after a reboot, when the switch was left on -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- the watchdog: an exact alarm wakes RestartReceiver after a kill -->
+    <!-- the sampler: a 30 s exact alarm wakes RestartReceiver for one reading -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
@@ -94,7 +94,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- the watchdog's other end: an exact alarm is an explicit
+        <!-- the sampler's other end: an exact alarm is an explicit
              PendingIntent, so it does not need an exported receiver -->
         <receiver
             android:name=".RestartReceiver"
