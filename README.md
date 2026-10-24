@@ -4,9 +4,8 @@
 
 **English** | [中文](README.zh.md)
 
-**Two things: notifications you can hear, and a battery window for a phone that
-stays plugged in.**  Without root it falls back to plain power / battery
-monitoring.  Supported:
+**Two things: notifications** and **power state**.  Without root it falls back
+to plain power / battery monitoring.  Supported:
 
 - **Android 7.0 (API 24) and newer**: every phone, no root needed
 - **postmarketOS**: mainline kernels whose charger exposes the interfaces it
@@ -33,7 +32,7 @@ once.
 <sub>Android 通知页 / Android's notification page: banner or voice, on a phone
 that is plugged in.</sub>
 
-**2. Battery window.**  Charging stops at the **upper** limit and resumes at the
+**2. Power state.**  Charging stops at the **upper** limit and resumes at the
 **lower** one; between them nothing changes.  This is the part that needs the
 root daemon on postmarketOS; on an unrooted Android phone the rows are shown but
 switched off, and everything else still monitors.
