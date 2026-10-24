@@ -39,13 +39,13 @@ DEFAULT_GAP = 2
 KINDS = (("banner", "横幅"), ("voice", "语音"))
 
 # How the phone says a sentence out loud.  The voice picked in the tuning
-# window: espeak-ng's female f1 Mandarin, direct to its own audio output.
+# window: espeak-ng's female f3 Mandarin, direct to its own audio output.
 # spd-say stays as the fallback for a machine without espeak-ng.
 VOICE_ENGINES = ("espeak-ng", "espeak", "spd-say")
-VOICE_VOICE = "cmn+f1"
+VOICE_VOICE = "cmn+f3"
 VOICE_RATE = 200
-VOICE_PITCH = 90
-VOICE_AMP = 93
+VOICE_PITCH = 99
+VOICE_AMP = 130
 VOICE_GAP = 0
 
 
@@ -80,7 +80,7 @@ def voice_command(text, lang=None):
     if name == "spd-say":
         base = [VOICE_CMD, "-N", "chargecap", "-n", "main"]
         if zh:
-            return base + ["-y", "Chinese (Mandarin, latin as English)+f1",
+            return base + ["-y", "Chinese (Mandarin, latin as English)+f3",
                            "-r", "20", "-p", "40", "-w", text]
         return base + ["-w", text]
     return [VOICE_CMD, text]

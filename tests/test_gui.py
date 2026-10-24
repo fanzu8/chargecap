@@ -799,8 +799,8 @@ class NotifyTableTest(unittest.TestCase):
             notifications.VOICE_CMD = "/usr/bin/espeak-ng"
             self.assertEqual(
                 notifications.voice_command("充电完成", "zh"),
-                ["/usr/bin/espeak-ng", "-v", "cmn+f1",
-                 "-s", "200", "-p", "90", "-a", "93", "-g", "0",
+                ["/usr/bin/espeak-ng", "-v", "cmn+f3",
+                 "-s", "200", "-p", "99", "-a", "130", "-g", "0",
                  "充电完成"])
             self.assertEqual(
                 notifications.voice_command("Charging complete", "en"),
@@ -809,7 +809,7 @@ class NotifyTableTest(unittest.TestCase):
             self.assertEqual(
                 notifications.voice_command("充电完成", "zh"),
                 ["/usr/bin/spd-say", "-N", "chargecap", "-n", "main",
-                 "-y", "Chinese (Mandarin, latin as English)+f1",
+                 "-y", "Chinese (Mandarin, latin as English)+f3",
                  "-r", "20", "-p", "40", "-w", "充电完成"])
             notifications.VOICE_CMD = None
             self.assertIsNone(notifications.voice_command("充电完成", "zh"))
