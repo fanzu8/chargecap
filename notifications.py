@@ -22,7 +22,6 @@ read in either language by either process.
 """
 import json
 import os
-import shlex
 import shutil
 import time
 
@@ -40,17 +39,14 @@ DEFAULT_GAP = 2
 KINDS = (("banner", "横幅"), ("voice", "语音"))
 
 # How the phone says a sentence out loud.  The voice picked in the tuning
-# window: espeak-ng's female f4 Mandarin, fast, high and quietly rendered to a
-# pipe instead of opening its own audio device.  --stdout | aplay keeps the
-# audio path the same as the tuner without leaving a WAV behind.  spd-say stays
-# as the fallback for a machine without espeak-ng/aplay.
+# window: espeak-ng's female f1 Mandarin, direct to its own audio output.
+# spd-say stays as the fallback for a machine without espeak-ng.
 VOICE_ENGINES = ("espeak-ng", "espeak", "spd-say")
-VOICE_VOICE = "cmn+f4"
-VOICE_RATE = 209
-VOICE_PITCH = 99
-VOICE_AMP = 85
-VOICE_GAP = 5
-VOICE_PLAYER = "aplay"
+VOICE_VOICE = "cmn+f1"
+VOICE_RATE = 200
+VOICE_PITCH = 90
+VOICE_AMP = 93
+VOICE_GAP = 0
 
 
 def _find_voice():
@@ -67,9 +63,9 @@ VOICE_CMD = _find_voice()
 def voice_command(text, lang=None):
     """The command that says [text], or None when there is no engine.
 
-    A Chinese sentence goes through espeak-ng's WAV output and aplay; English
-    takes the engine directly.  spd-say, when it is all the phone has, asks for
-    the same female variant and leaves the audio path to the dispatcher.
+    A Chinese sentence is spoken by espeak-ng directly; English takes the
+    default voice.  spd-say, when it is all the phone has, asks for the same
+    female variant and leaves the audio path to the dispatcher.
     """
     if not VOICE_CMD:
         return None
@@ -77,20 +73,15 @@ def voice_command(text, lang=None):
     name = os.path.basename(VOICE_CMD)
     if name in ("espeak", "espeak-ng"):
         if zh:
-            script = (
-                "%s -v %s -s %d -p %d -a %d -g %d --stdout %s | %s -q" % (
-                    shlex.quote(VOICE_CMD), VOICE_VOICE, VOICE_RATE,
-                    VOICE_PITCH, VOICE_AMP, VOICE_GAP,
-                    shlex.quote(text), VOICE_PLAYER,
-                )
-            )
-            return ["sh", "-c", script]
+            return [VOICE_CMD, "-v", VOICE_VOICE,
+                    "-s", str(VOICE_RATE), "-p", str(VOICE_PITCH),
+                    "-a", str(VOICE_AMP), "-g", str(VOICE_GAP), text]
         return [VOICE_CMD, text]
     if name == "spd-say":
         base = [VOICE_CMD, "-N", "chargecap", "-n", "main"]
         if zh:
-            return base + ["-y", "Chinese (Mandarin, latin as English)+f4",
-                           "-r", "20", "-p", "100", "-w", text]
+            return base + ["-y", "Chinese (Mandarin, latin as English)+f1",
+                           "-r", "20", "-p", "40", "-w", text]
         return base + ["-w", text]
     return [VOICE_CMD, text]
 
