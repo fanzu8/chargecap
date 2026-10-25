@@ -7,11 +7,19 @@
 **Three features: notifications**, **charge limit**, **power state**.
 
 **Use cases:**
-- **Notifications**: elderly phones, server power and temperature status notifications, etc.
-- **Quality check**: judge cable / charger / power bank quality (voltage sag,
-  the power it can hold), charge/discharge curves, USB port capability, etc.
+- **Notifications/alerts**: phone/server power connection and temperature
+  status notifications, elderly-phone voice prompts, power-on/off
+  notifications, etc.
+- **Quality check**: judge cable / charger / power bank quality (how much the
+  voltage sags, how much current/power it can hold), charge/discharge curves,
+  USB port capability, etc.
 - **Charge limit**: limit charge level and current, prevent overcharge and
   overheat, extend battery life, etc.
+- **Inhibit sleep**: keep the network up, prevent the device from sleeping.
+
+<img src="docs/android-notifications-en.png" width="48%" alt="notifications"> <img src="docs/demo-en.gif" width="47.2%" alt="chargecap">
+
+<img src="docs/android-notifications-zh.png" width="48%" alt="notifications"> <img src="docs/demo-zh.gif" width="47.2%" alt="chargecap">
 
 Supported:
 
@@ -33,8 +41,6 @@ configure:
 **Background**: Android wakes every 30 seconds, takes one reading, and does not
 hold the CPU awake between readings; each reading holds a short 2 s lock while
 the banner or voice is posted.  Turn on 禁止休眠 for the continuous 3 s reader.
-
-<img src="docs/android-notifications-en.png" width="38%" alt="Android notification page: 13 notifications, banner or voice">
 
 ### 2. Charge limit and power state
 
@@ -62,9 +68,6 @@ them nothing changes.
   as well as shown, so they are heard without looking at the screen -- made for
   elderly and low-vision users, and handy with the phone in a pocket
 - **休眠记录**: whether the 禁止休眠 promise held
-
-
-<img src="docs/demo-en.gif" width="49%" alt="chargecap"> <img src="docs/demo-zh.gif" width="49%" alt="chargecap">
 
 ## Supported devices
 

@@ -7,9 +7,14 @@
 **三大功能：通知** 、**充电限制**、**电源状态**。 
 
 **应用场景：**
-- **通知**：老人机、服务器运行电源、温度状态通知等。
-- **质量判断**：判断数据线 / 充电器 / 充电宝的质量（掉压多少、能撑多大功率），充放电曲线，以及 USB 口能力等。
+- **通知/告警**：手机服务器电源连接/温度状态通知等、老人机语音提示、上下电通知等。
+- **质量判断**：判断数据线 / 充电器 / 充电宝的质量（掉压多少、能撑多大电流 / 功率），充放电曲线，以及 USB 口能力等。
 - **充电限制**：限制充电电量、电流，防止过充、过热，电池寿命延长等。
+- **禁止休眠**：保持网络连接，防止设备休眠。
+
+<img src="docs/android-notifications-en.png" width="48%" alt="notifications"> <img src="docs/demo-en.gif" width="47.2%" alt="chargecap">
+
+<img src="docs/android-notifications-zh.png" width="48%" alt="notifications"> <img src="docs/demo-zh.gif" width="47.2%" alt="chargecap">
 
 支持：
 - **Android 7.0（API 24）及以上**：所有机型，不需要 root （没 root 仅充电限制功能失效）
@@ -26,8 +31,6 @@
 
 **后台运行**：安卓每 30 秒醒一次、读一次，不常驻占用 CPU；每次只持 2 秒短锁，
 让横幅或语音发出去。要连续 3 秒判断就打开「禁止休眠」。
-
-<img src="docs/android-notifications-zh.png" width="38%" alt="安卓通知页：十三条通知，横幅或语音">
 
 
 
@@ -52,7 +55,6 @@
 - **休眠记录**：验证「禁止休眠」有没有真的做到
 
 
-<img src="docs/demo-en.gif" width="49%" alt="chargecap"> <img src="docs/demo-zh.gif" width="49%" alt="chargecap">
 
 ## 支持机型
 
